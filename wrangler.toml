@@ -1,0 +1,27 @@
+name = "bolao"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Um único Worker: serve o site (public/), a API em /api/* e os crons.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# UTC. O scheduled() escolhe a tarefa pelo texto exato do cron (src/index.ts).
+[triggers]
+crons = ["0 9 * * *", "0 * * * *", "*/15 * * * *"]
+
+[vars]
+# Supabase → Project Settings → API (ou botão Connect): a URL do projeto, algo como https://abcdefgh.supabase.co
+SUPABASE_URL = "COLOQUE_A_URL_DO_SUPABASE"
+# Notificações push (opcional): npx web-push generate-vapid-keys
+VAPID_PUBLIC_KEY = ""
+VAPID_SUBJECT = "mailto:seu-email@exemplo.com"
+
+# Secrets (não ficam aqui): npx wrangler secret put <NOME>
+#   SUPABASE_SERVICE_KEY  (chave secreta do Supabase: sb_secret_... ou service_role)
+#   SESSION_SECRET        (texto aleatório de 32+ caracteres que assina o cookie de login)
+#   API_FOOTBALL_KEY
+#   VAPID_PRIVATE_KEY     (só se for usar notificações)

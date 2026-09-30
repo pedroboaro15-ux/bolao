@@ -1,0 +1,18 @@
+{
+  "name": "bolao",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bolão entre amigos — Cloudflare Workers + Supabase",
+  "scripts": {
+    "dev": "npx --yes wrangler@4.143.1 dev",
+    "deploy": "npx --yes wrangler@4.143.1 deploy",
+    "test": "npx --yes vitest@5.0.2 run",
+    "seed:admin": "npx --yes tsx@4.23.15 scripts/seed-admin.ts"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
+    "hono": "^4.13.11",
+    "jose": "^6.2.12"
+  }
+}
