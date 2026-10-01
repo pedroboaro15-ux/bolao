@@ -15,7 +15,7 @@ crons = ["0 9 * * *", "0 * * * *", "*/15 * * * *"]
 
 [vars]
 # Supabase → Project Settings → API (ou botão Connect): a URL do projeto, algo como https://abcdefgh.supabase.co
-SUPABASE_URL = "COLOQUE_A_URL_DO_SUPABASE"
+SUPABASE_URL = "https://sezcirjlcomltrklrzae.supabase.co"
 # Notificações push (opcional): npx web-push generate-vapid-keys
 VAPID_PUBLIC_KEY = ""
 VAPID_SUBJECT = "mailto:seu-email@exemplo.com"
