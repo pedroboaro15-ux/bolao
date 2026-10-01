@@ -41,6 +41,8 @@ export function parseFixture(f: any): FixtureView {
 // ---------- odds ----------
 
 const PREFERRED = [/pinnacle/i, /betfair/i];
+/** ids das casas na API-Football, em ordem de preferência: Pinnacle, Bet365. */
+const ODDS_BOOKMAKERS = [4, 8];
 
 interface Bet {
   name: string;
@@ -101,7 +103,7 @@ export function parseOdds(response: any[]): RawMarkets {
         const vals = perBook.map((b) => b.sel[k]).filter((v) => v > 1);
         if (vals.length) raw[k] = Math.round(median(vals) * 100) / 100;
       }
-      chosen = { source: `mediana de ${perBook.length} casa${perBook.length > 1 ? "s" : ""}`, raw };
+      chosen = { source: perBook.length === 1 ? perBook[0].name : `mediana de ${perBook.length} casas`, raw };
     }
     out[key] = chosen;
   }
@@ -174,9 +176,17 @@ export class ApiFootball {
     return rows.map(parseFixture);
   }
 
+  /**
+   * Odds de um jogo, uma casa por chamada (Pinnacle; se ela não tiver o jogo, Bet365). A resposta com todas as casas
+   * passa de 190 KB, e só ler e processar isso estoura os 10 ms de CPU do plano grátis do Workers. A Pinnacle traz 1X2 e
+   * Mais/Menos 2,5 (o placar exato vem do modelo de Poisson); a Bet365 traz também o placar exato.
+   */
   async odds(fixtureId: number, opts: { keepReserve?: boolean; spaced?: boolean } = {}): Promise<RawMarkets> {
-    const rows = await this.call("/odds", { fixture: fixtureId }, opts);
-    return parseOdds(rows);
+    for (const bookmaker of ODDS_BOOKMAKERS) {
+      const parsed = parseOdds(await this.call("/odds", { fixture: fixtureId, bookmaker }, opts));
+      if (parsed["1X2"]) return parsed;
+    }
+    return {};
   }
 
   async teamFixtures(teamId: number, kind: "last" | "next", n: number): Promise<FixtureView[]> {

@@ -5,7 +5,7 @@ import { badRequest, conflict, notFound } from "../lib/errors";
 import { bolaoDay, isDateString, utcDate } from "../lib/dates";
 import { parseSettingsPatch } from "../lib/settings";
 import { ApiFootball, PROVIDER } from "../services/apifootball";
-import { chosenToday, createRound, freezeStarted, loadFixtures, refreshMatchOdds, refreshOddsBatch, setManualOdds } from "../services/rounds";
+import { chosenToday, createRound, freezeStarted, loadFixtures, refreshMatchOdds, setManualOdds } from "../services/rounds";
 import { recalcRound } from "../services/results";
 import { notifyFinished } from "../services/cron";
 import { pushConfigured, sendPush } from "../services/push";
@@ -72,12 +72,11 @@ export function adminRoutes() {
       settings,
     );
 
-    // Depois de responder: odds dos primeiros jogos (a API grátis aceita ~10 chamadas/min; o cron completa o resto) e aviso push.
+    // Depois de responder: aviso push. As odds não entram aqui: o plano grátis do Workers dá só 10 ms de CPU por execução,
+    // então a tela do admin busca uma por vez (um pedido por jogo) e o cron completa o que faltar.
     c.executionCtx.waitUntil(
       (async () => {
         try {
-          const matches = await repo.matchesByIds(matchIds);
-          await refreshOddsBatch(repo, new ApiFootball(c.env, repo, settings), settings, matches, 4);
           if (open && pushConfigured(c.env)) {
             await sendPush(c.env, repo, "all", { title: "Rodada aberta!", body: `${body.title ?? "Nova rodada"}: ${matchIds.length} jogos esperando seus palpites.`, url: "/" });
           }
@@ -200,7 +199,7 @@ export function adminRoutes() {
     if (!match) throw notFound("Jogo não encontrado");
     const settings = await repo.settings();
     const res = await refreshMatchOdds(repo, new ApiFootball(c.env, repo, settings), settings, match);
-    return c.json(res, res.ok ? 200 : 422);
+    return c.json(res.ok ? res : { ...res, erro: res.motivo }, res.ok ? 200 : 422);
   });
 
   // ---------- usuários ----------

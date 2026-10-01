@@ -73,19 +73,21 @@ export function fitPoisson(fair1x2: Record<string, number>, fairOu?: Record<stri
     return l;
   };
 
+  // Grade grossa e depois grades cada vez mais finas em volta do melhor ponto (~350 avaliações). Antes eram ~2.500, e isso
+  // sozinho passava dos 10 ms de CPU que o plano grátis do Workers dá por execução.
   let best = { lh: 1.3, la: 1.1, l: Infinity };
-  for (let lh = 0.1; lh <= 4.5; lh += 0.1) {
-    for (let la = 0.1; la <= 4.5; la += 0.1) {
-      const l = loss(lh, la);
-      if (l < best.l) best = { lh, la, l };
+  const scan = (lo: [number, number], hi: [number, number], step: number) => {
+    for (let lh = lo[0]; lh <= hi[0] + 1e-9; lh += step) {
+      for (let la = lo[1]; la <= hi[1] + 1e-9; la += step) {
+        const l = loss(lh, la);
+        if (l < best.l) best = { lh, la, l };
+      }
     }
-  }
-  const c = best;
-  for (let lh = Math.max(0.02, c.lh - 0.1); lh <= c.lh + 0.1; lh += 0.01) {
-    for (let la = Math.max(0.02, c.la - 0.1); la <= c.la + 0.1; la += 0.01) {
-      const l = loss(lh, la);
-      if (l < best.l) best = { lh, la, l };
-    }
+  };
+  scan([0.1, 0.1], [4.5, 4.5], 0.5);
+  for (const [span, step] of [[0.5, 0.1], [0.1, 0.02], [0.02, 0.01]] as const) {
+    const c = best;
+    scan([Math.max(0.02, c.lh - span), Math.max(0.02, c.la - span)], [c.lh + span, c.la + span], step);
   }
   return { lh: round2(best.lh), la: round2(best.la) };
 }

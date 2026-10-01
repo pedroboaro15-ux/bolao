@@ -8,6 +8,8 @@ import { pushConfigured, sendPush } from "./push";
 
 const MATCH_DURATION_MIN = 105; // 90' + acréscimos + intervalo: só depois disso vale perguntar o placar
 const GIVE_UP_HOURS = 36;
+// Workers grátis: 10 ms de CPU por execução. Cada jogo de odds custa alguns ms, então só um por vez (o cron de 15 min ajuda).
+const ODDS_PER_RUN = 1;
 
 async function activeRounds(repo: Repo) {
   const [open, closed] = await Promise.all([repo.roundsByStatus("open"), repo.roundsByStatus("closed")]);
@@ -41,7 +43,7 @@ export async function runHourly(env: Env, repo: Repo) {
 
   const openIds = new Set(rounds.filter((r) => r.status === "open").map((r) => r.id));
   const upcoming = all.filter((m) => openIds.has(m.round_id));
-  const odds = await refreshOddsBatch(repo, api, settings, upcoming, 8, now);
+  const odds = await refreshOddsBatch(repo, api, settings, upcoming, ODDS_PER_RUN, now);
   console.log(`hourly: congelados=${frozen} odds=${JSON.stringify(odds)}`);
 }
 
@@ -99,6 +101,11 @@ export async function runFrequent(env: Env, repo: Repo) {
 
   // 3) lembrete: 30 min antes do 1º jogo, para quem ainda não palpitou
   await sendReminders(env, repo, rounds, byRound, now);
+
+  // 4) odds de um jogo por execução (primeira busca ou foto perto do jogo)
+  const openIds = new Set(rounds.filter((r) => r.status === "open").map((r) => r.id));
+  const upcoming = [...byRound.entries()].filter(([id]) => openIds.has(id)).flatMap(([, ms]) => ms);
+  await refreshOddsBatch(repo, api, settings, upcoming, ODDS_PER_RUN, now).catch((e) => console.error("odds falhou:", e?.message));
 }
 
 export async function notifyFinished(env: Env, repo: Repo, roundId: string) {

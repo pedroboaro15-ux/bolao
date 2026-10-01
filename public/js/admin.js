@@ -149,7 +149,10 @@ async function daily(body) {
     if (c)
       busy(c, async () => {
         const res = await api("/admin/rodadas", { method: "POST", body: { date: S.date, title: S.title || `Rodada de ${fmtDate(S.date)}`, fixtureIds: [...S.picked], open: true } });
-        toast("Rodada criada e aberta! As odds chegam em instantes.", "ok");
+        toast("Rodada criada e aberta! Buscando as odds jogo a jogo…", "ok");
+        try {
+          sessionStorage.setItem("bolao-buscar-odds", res.id);
+        } catch {}
         go(`/admin/rodadas/${res.id}`);
       });
   });
@@ -180,6 +183,7 @@ async function roundResults(body, id) {
           <button class="btn small" data-recalc>Recalcular pontos</button></div></div>
       </div>
       ${d.jogos.map(matchAdmin).join("")}`;
+    return d;
   }
 
   const matchAdmin = (m) => {
@@ -198,6 +202,30 @@ async function roundResults(body, id) {
         ${!started ? `<div class="actions"><button class="btn small" data-fetch-odds>Buscar odds na API</button><button class="btn small" data-manual-odds>Digitar odds</button></div>` : `<div class="actions"><button class="btn small" data-manual-odds>Digitar odds</button></div>`}
       </div></div>`;
   };
+
+  /** Uma odd por vez, cada uma num pedido próprio (e ~6,5 s entre elas: a API grátis aceita ~10 por minuto). */
+  let filling = false;
+  async function fillOdds(jogos) {
+    if (filling) return;
+    filling = true;
+    const todo = jogos.filter((m) => !m.odds && !m.voided && Date.parse(m.kickoff_utc) > Date.now());
+    let ok = 0;
+    let lastError = "";
+    for (let i = 0; i < todo.length && body.isConnected; i++) {
+      if (i) await new Promise((r) => setTimeout(r, 6500));
+      if (!body.isConnected) break;
+      toast(`Buscando odds ${i + 1} de ${todo.length}…`);
+      try {
+        await api(`/admin/jogos/${todo[i].id}/atualizar-odds`, { method: "POST" });
+        ok++;
+      } catch (e) {
+        lastError = e.message;
+      }
+      if (body.isConnected) await load();
+    }
+    filling = false;
+    if (todo.length) toast(ok === todo.length ? "Odds prontas!" : `Odds de ${ok} de ${todo.length} jogos. ${lastError}`, ok === todo.length ? "ok" : "err");
+  }
 
   body.addEventListener("click", (e) => {
     const card = e.target.closest("[data-m]");
@@ -235,7 +263,13 @@ async function roundResults(body, id) {
       });
     if (b.matches("[data-manual-odds]")) manualOdds(mid, load);
   });
-  await load();
+  const first = await load();
+  let fresh = false;
+  try {
+    fresh = sessionStorage.getItem("bolao-buscar-odds") === id;
+    if (fresh) sessionStorage.removeItem("bolao-buscar-odds");
+  } catch {}
+  if (fresh) fillOdds(first.jogos);
 }
 
 function manualOdds(matchId, done) {
