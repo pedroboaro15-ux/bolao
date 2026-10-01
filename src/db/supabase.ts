@@ -79,7 +79,7 @@ export class SupabaseDb implements Db {
   constructor(
     url: string,
     private key: string,
-    private fetchImpl: typeof fetch == (input, init) => fetch(input, init),
+    private fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.base = `${url.replace(/\/+$/, "")}/rest/v1`;
   }
