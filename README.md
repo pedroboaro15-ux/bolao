@@ -21,7 +21,7 @@ Abra http://127.0.0.1:8787. O `.dev.vars` com `DEV_MEMORY=1` liga o **modo demon
 ### 1. Supabase (uns 10 minutos, em https://supabase.com)
 1. Crie a conta e um **New project**. Nome: `bolao`. Região: **South America (São Paulo)**. Guarde a senha do banco (você não vai precisar dela agora).
 2. **SQL Editor → New query**: cole o conteúdo inteiro do arquivo [schema.sql](schema.sql) e clique em **Run**. Cria as 11 tabelas e deixa tudo trancado (só o servidor do site mexe nos dados). Pode rodar de novo sem problema.
-3. **Authentication → Sign In / Providers**: em **Email**, deixe ligado e **desligue "Allow new users to sign up"** (o cadastro é só por convite, feito pelo servidor).
+3. **Authentication → Sign In / Providers**: em **Email**, deixe ligado e **desligue "Allow new users to sign up"** (o cadastro é feito pelo servidor do site, na tela "Criar conta").
 4. **Project Settings → API Keys** (ou o botão **Connect**): copie a **Project URL** (`https://xxxx.supabase.co`) e a **secret key** (`sb_secret_...`; no formato antigo é a `service_role`). A secret key é um segredo: não vai para o git nem para o chat.
 
 ### 2. Configurar o projeto
@@ -68,7 +68,7 @@ Sem isso, o link do e-mail de recuperação de senha não volta para o seu site.
 ### 7. Conferir
 1. **Admin → APIs → Testar API-Football**: mostra o plano, a cota e se a busca de jogos funciona no seu plano.
 2. **Admin → Configurações**: defina o limite de jogos por dia e ligue/desligue gols e placar exato.
-3. **Admin → Convites**: gere um link e mande no grupo. Quem abrir cria a conta sozinho.
+3. **Cadastro dos amigos:** mande o endereço do site. Cada pessoa toca em **Criar conta** e informa e-mail, telefone e senha (com confirmação).
 4. **Admin → Jogos do dia**: escolha os jogos e crie a primeira rodada.
 
 Se mudar algo no código, publique de novo com `npm run deploy` (os dados ficam no Supabase, nada se perde).
@@ -86,7 +86,7 @@ e por isso a pasta `node_modules` tem menos de 700 arquivos.
 | comando | o que faz |
 |---|---|
 | `npm run dev` | site local em http://127.0.0.1:8787 (modo demo se `DEV_MEMORY=1`) |
-| `npm test` | testes (Vitest): pontos, remoção da margem, trava de horário, login, convites, banco… |
+| `npm test` | testes (Vitest): pontos, remoção da margem, trava de horário, login, cadastro, banco… |
 | `npm run deploy` | publica no Cloudflare |
 | `npm run seed:admin` | cria o primeiro admin (Supabase Auth + tabela users) |
 

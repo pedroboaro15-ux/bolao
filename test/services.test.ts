@@ -200,11 +200,16 @@ describe("agenda de atualização das odds", () => {
 });
 
 describe("cadastro", () => {
+  const ok = { email: " ANA@x.com ", phone: "(11) 91234-5678", password: "12345678", confirm: "12345678" };
   it("valida os campos", () => {
-    expect(parseSignup({ name: "Ana Souza", nickname: "Aninha", email: " ANA@x.com ", password: "12345678" }).email).toBe("ana@x.com");
-    expect(() => parseSignup({ name: "A", nickname: "Aninha", email: "a@x.com", password: "12345678" })).toThrow();
-    expect(() => parseSignup({ name: "Ana", nickname: "A", email: "a@x.com", password: "12345678" })).toThrow();
-    expect(() => parseSignup({ name: "Ana", nickname: "Ani", email: "sem-arroba", password: "12345678" })).toThrow();
-    expect(() => parseSignup({ name: "Ana", nickname: "Ani", email: "a@x.com", password: "1234567" })).toThrow();
+    const r = parseSignup({ ...ok, nickname: "Aninha" });
+    expect(r).toMatchObject({ email: "ana@x.com", phone: "11912345678", nickname: "Aninha" });
+    expect(parseSignup(ok).nickname).toBe("ana"); // sem apelido: vem do e-mail
+    expect(parseSignup({ ...ok, phone: "+55 (21) 3333-4444" }).phone).toBe("2133334444");
+    expect(() => parseSignup({ ...ok, nickname: "A" })).toThrow();
+    expect(() => parseSignup({ ...ok, email: "sem-arroba" })).toThrow();
+    expect(() => parseSignup({ ...ok, phone: "12345" })).toThrow();
+    expect(() => parseSignup({ ...ok, password: "1234567", confirm: "1234567" })).toThrow();
+    expect(() => parseSignup({ ...ok, confirm: "87654321" })).toThrow(/não são iguais/);
   });
 });

@@ -163,41 +163,44 @@ describe("resultados, pontos e ranking", () => {
   });
 });
 
-describe("convites e cadastro", () => {
-  const signup = { name: "Novo Amigo", nickname: "Novato", email: "novo@demo.local", password: "senha1234" };
+describe("cadastro aberto", () => {
+  const signup = { email: "novo@demo.local", phone: "(11) 91234-5678", password: "senha1234", confirm: "senha1234" };
 
-  it("admin gera convite; cadastro funciona uma vez e o convite se esgota", async () => {
-    const inv = await json(await call("/api/admin/convites", { method: "POST", user: "admin", body: { max_uses: 1, dias: 3 } }));
-    expect(inv.url).toContain("/convite/");
-    const valid = await json(await call(`/api/convite/${inv.token}`));
-    expect(valid.valido).toBe(true);
-
-    const bad = await call(`/api/convite/${inv.token}`, { method: "POST", body: { ...signup, password: "curta" } });
-    expect(bad.status).toBe(400);
-
-    const ok = await call(`/api/convite/${inv.token}`, { method: "POST", body: signup });
+  it("cria a conta sem convite, guarda só os dígitos do telefone e já entra", async () => {
+    const ok = await call("/api/cadastro", { method: "POST", body: signup });
     expect(ok.status).toBe(201);
     expect(ok.headers.get("set-cookie")).toMatch(/bolao_sessao=/);
-    expect((await json(ok)).usuario.role).toBe("player");
-
-    const used = await call(`/api/convite/${inv.token}`, { method: "POST", body: { ...signup, email: "outro@demo.local" } });
-    expect(used.status).toBe(410);
-    expect((await json(await call(`/api/convite/${inv.token}`))).valido).toBe(false);
+    const u = (await json(ok)).usuario;
+    expect(u.role).toBe("player");
+    expect(u.nickname).toBe("novo"); // apelido sugerido pelo e-mail
+    const lista = await json(await call("/api/admin/usuarios", { user: "admin" }));
+    expect(lista.usuarios.find((x: any) => x.email === "novo@demo.local").phone).toBe("11912345678");
   });
 
-  it("e-mail repetido é recusado e não gasta o convite", async () => {
-    const inv = await json(await call("/api/admin/convites", { method: "POST", user: "admin", body: { max_uses: 2 } }));
-    const dup = await call(`/api/convite/${inv.token}`, { method: "POST", body: { ...signup, email: "lucas@demo.local" } });
+  it("usa o apelido digitado e aceita +55 no telefone", async () => {
+    const ok = await call("/api/cadastro", { method: "POST", body: { ...signup, email: "ana2@demo.local", phone: "+55 21 98888-7777", nickname: "Aninha" } });
+    expect(ok.status).toBe(201);
+    expect((await json(ok)).usuario.nickname).toBe("Aninha");
+  });
+
+  it("recusa senhas diferentes, senha curta, telefone ou e-mail inválidos", async () => {
+    const post = (b: object) => call("/api/cadastro", { method: "POST", body: { ...signup, email: "x@demo.local", ...b } });
+    const diff = await post({ confirm: "outra-senha1" });
+    expect(diff.status).toBe(400);
+    expect((await json(diff)).erro).toMatch(/não são iguais/);
+    expect((await post({ password: "curta", confirm: "curta" })).status).toBe(400);
+    expect((await post({ phone: "123" })).status).toBe(400);
+    expect((await post({ phone: "" })).status).toBe(400);
+    expect((await post({ email: "isso-nao-e-email" })).status).toBe(400);
+  });
+
+  it("e-mail repetido é recusado", async () => {
+    const dup = await call("/api/cadastro", { method: "POST", body: { ...signup, email: "lucas@demo.local" } });
     expect(dup.status).toBe(409);
-    const list = await json(await call("/api/admin/convites", { user: "admin" }));
-    expect(list.convites.find((c: any) => c.token === inv.token).uses).toBe(0);
   });
 
-  it("convite revogado ou inexistente não cadastra", async () => {
-    const inv = await json(await call("/api/admin/convites", { method: "POST", user: "admin", body: {} }));
-    await call(`/api/admin/convites/${inv.token}`, { method: "DELETE", user: "admin" });
-    expect((await call(`/api/convite/${inv.token}`, { method: "POST", body: { ...signup, email: "x@demo.local" } })).status).toBe(410);
-    expect((await call("/api/convite/nao-existe", { method: "POST", body: signup })).status).toBe(404);
+  it("a rota de convite não existe mais", async () => {
+    expect((await call("/api/convite/qualquer", { method: "POST", body: signup })).status).toBe(401);
   });
 
   it("não deixa remover o último admin nem a si mesmo", async () => {

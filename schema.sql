@@ -8,21 +8,14 @@ create table if not exists users (
   name        text not null,
   nickname    text not null,
   email       text not null unique,
+  phone       text,                        -- só dígitos, com DDD
   role        text not null default 'player' check (role in ('admin', 'player')),
   created_at  timestamptz not null default now(),
   version     bigint not null default 1
 );
 
-create table if not exists invites (
-  id          text primary key,            -- o token do link /convite/{token}
-  max_uses    integer not null default 1,
-  uses        integer not null default 0,
-  expires_at  timestamptz not null,
-  created_by  text,
-  revoked     boolean not null default false,
-  created_at  timestamptz not null default now(),
-  version     bigint not null default 1
-);
+-- Bancos criados antes do cadastro aberto não tinham o telefone:
+alter table users add column if not exists phone text;
 
 create table if not exists rounds (
   id                 text primary key,     -- AAAA-MM-DD (dia do bolão: 06:00 às 06:00 em São Paulo), ou AAAA-MM-DD-2...
@@ -160,7 +153,7 @@ begin
     did  := x->>'id';
     op   := x->>'op';
 
-    if coll not in ('users', 'invites', 'rounds', 'matches', 'predictions', 'standings', 'api_usage', 'push_subs',
+    if coll not in ('users', 'rounds', 'matches', 'predictions', 'standings', 'api_usage', 'push_subs',
                     'settings', 'fixtures_cache', 'team_cache') then
       raise exception 'coleção inválida: %', coll;
     end if;
@@ -230,7 +223,6 @@ $$;
 -- Segurança: só a chave secreta do servidor (service_role) mexe nos dados.
 -- ---------------------------------------------------------------------------
 alter table users          enable row level security;
-alter table invites        enable row level security;
 alter table rounds         enable row level security;
 alter table matches        enable row level security;
 alter table predictions    enable row level security;
@@ -241,7 +233,7 @@ alter table settings       enable row level security;
 alter table fixtures_cache enable row level security;
 alter table team_cache     enable row level security;
 
-revoke all on users, invites, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache
+revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache
   from anon, authenticated;
 revoke all on function apply_writes(jsonb) from public, anon, authenticated;
 grant execute on function apply_writes(jsonb) to service_role;

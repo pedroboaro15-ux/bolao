@@ -88,13 +88,12 @@ Pontos em formato de odd: botões mostram a **odd justa** (2 casas); cada acerto
 
 ## Autenticação (Supabase Auth)
 Senhas, unicidade de e-mail e recuperação de senha ficam com o Supabase Auth; o Worker não guarda hash.
-- Cadastro **somente via convite**: o admin gera um link `/convite/{token}` (expira, uso único ou com limite de usos).
-- Cadastro com nome, apelido, e-mail e senha, **feito pelo Worker** (`POST /api/convite/{token}`): confere o convite, cria o usuário
-  pela API de administração do Auth (`POST /auth/v1/admin/users`, já confirmado), grava `users/{id}` e consome o convite numa
-  única escrita com precondição de versão (dois usos ao mesmo tempo: só um passa). Se a gravação falhar, apaga o usuário recém-criado.
-  Depois o front faz login normalmente.
-- Ninguém entra sem convite: no painel, desligar "Allow new users to sign up"; de qualquer forma, o Worker recusa todo usuário do Auth
-  que não tenha linha em `users`.
+- Cadastro **aberto** (sem convite): a tela "Criar conta" pede e-mail, telefone (com DDD), senha e confirmação (olhinho para ver a senha), e
+  um apelido opcional (sem ele, vem do e-mail). É **feito pelo Worker** (`POST /api/cadastro`): cria o usuário pela API de administração do
+  Auth (`POST /auth/v1/admin/users`, já confirmado; o Auth recusa e-mail repetido) e grava `users/{id}` com o telefone só em dígitos.
+  Se a gravação falhar, apaga o usuário recém-criado. Depois o servidor já grava o cookie de login.
+- No painel do Supabase, deixar "Allow new users to sign up" **desligado**: o cadastro passa só pelo Worker. O Worker recusa todo usuário
+  do Auth que não tenha linha em `users`.
 - Login: `POST /api/entrar` manda e-mail e senha; o Worker confere no Supabase (`/auth/v1/token?grant_type=password`) e grava um **cookie
   de sessão próprio**: JWT HS256 assinado com `SESSION_SECRET`, validade de 14 dias, httpOnly, `Secure`, `SameSite=Lax`.
   Validar o cookie não usa rede. Logout apaga o cookie.
@@ -108,8 +107,7 @@ Senhas, unicidade de e-mail e recuperação de senha ficam com o Supabase Auth; 
 ## Banco (Supabase / Postgres)
 Tabelas em `schema.sql`. Datas em `timestamptz` (UTC). O "id" de cada linha é texto.
 ```text
-users          id (= id do Supabase Auth), name, nickname, email (único), role('admin'|'player'), created_at
-invites        id (= token), max_uses, uses, expires_at, created_by, revoked, created_at
+users          id (= id do Supabase Auth), name, nickname, email (único), phone, role('admin'|'player'), created_at
 rounds         id (AAAA-MM-DD do dia do bolão), title, date, status('draft'|'open'|'closed'|'finished'), created_at, match_ids[jsonb]
 matches        id, round_id, api_fixture_id, league/home/away[jsonb], kickoff_utc, status, home_goals, away_goals,
                manual_override, voided, relevance, odds[jsonb] (ao vivo), frozen_odds[jsonb] (congeladas), extras_frozen[jsonb]
@@ -184,7 +182,7 @@ Sem fotos de atletas: o papel da foto recortada e do banner fica com escudos gra
 **Participante**
 - Rodada atual (ref. 2): cards dos jogos com escudos, horário, odds 1X2 e um input de placar (+/−).
   Mostrar "vale X pts se acertar exato" com base na odd atual.
-- Entrar, cadastro pelo convite e "Esqueci a senha".
+- Entrar, criar conta (e-mail, telefone, senha e confirmação) e "Esqueci a senha".
 - Meus palpites / histórico.
 - Ranking: rodada, mês e geral (ref. 1 no topo, com o líder em destaque).
 - Detalhe do jogo depois do kickoff: palpites de todos e pontos de cada um.
@@ -192,7 +190,6 @@ Sem fotos de atletas: o papel da foto recortada e do banner fica com escudos gra
 **Admin**
 - Jogos do dia ordenados por relevância → selecionar jogos (até o limite do dia) → criar e abrir a rodada.
 - Tela de resultados: placar manual, anular jogo, recalcular pontos.
-- Convites: gerar, copiar link, revogar.
 - Usuários: listar, remover (apaga no Auth e em `users`), promover a admin.
 - Configurações: multiplicadores, coringa on/off, limite de odd, pesos das ligas.
 - Painel de uso das APIs (chamadas hoje / limite).
@@ -212,7 +209,7 @@ Sem fotos de atletas: o papel da foto recortada e do banner fica com escudos gra
 1. Estrutura do projeto (Worker com Static Assets), `wrangler.toml`, cliente REST do Supabase, `schema.sql`,
    script `seed:admin` e um README com o passo a passo de configuração (criar o projeto no Supabase, rodar o `schema.sql`,
    copiar a URL e a secret key, `wrangler login`, secrets, chaves VAPID).
-2. Autenticação (Supabase Auth + cookie de sessão) e convites.
+2. Autenticação (Supabase Auth + cookie de sessão) e cadastro.
 3. Integração API-Football + relevância + tela admin de seleção.
 4. Palpites com trava no kickoff.
 5. Odds, remoção da margem e congelamento.
@@ -220,7 +217,7 @@ Sem fotos de atletas: o papel da foto recortada e do banner fica com escudos gra
 7. Polimento mobile seguindo as referências visuais, e depois os extras.
 
 Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da margem e a trava de horário
-(e, na etapa 2, para a validação do session cookie e do convite).
+(e, na etapa 2, para a validação do session cookie e do cadastro).
 
 ## Notas de implementação (o que ficou diferente do plano acima)
 - **Feito:** todas as etapas 1–7, os extras da fase 2 (WhatsApp, tema claro/escuro, PWA, estatísticas) e as notificações push.

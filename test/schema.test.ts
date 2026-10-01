@@ -34,8 +34,8 @@ const check = (w: Write) => {
 };
 
 describe("schema.sql cobre tudo que o app grava", () => {
-  it("o arquivo tem as 11 tabelas esperadas", () => {
-    expect([...tables.keys()].sort()).toEqual(["api_usage", "fixtures_cache", "invites", "matches", "predictions", "push_subs", "rounds", "settings", "standings", "team_cache", "users"]);
+  it("o arquivo tem as 10 tabelas esperadas", () => {
+    expect([...tables.keys()].sort()).toEqual(["api_usage", "fixtures_cache", "matches", "predictions", "push_subs", "rounds", "settings", "standings", "team_cache", "users"]);
     expect(tables.get("predictions")).toContain("pick_1x2");
   });
 
@@ -61,10 +61,8 @@ describe("schema.sql cobre tudo que o app grava", () => {
     await call(`/api/admin/rodadas/${rid}/recalcular`, "admin", "POST");
     await call("/api/admin/jogos/900206/odds", "admin", "PUT", { "1": 1.8, X: 3.5, "2": 4.5, over: 1.9, under: 1.9 });
     await call("/api/admin/rodadas/" + rid, "admin", "PATCH", { status: "closed" });
-    // convite + cadastro + papel + remoção
-    const inv = await json(await call("/api/admin/convites", "admin", "POST", { max_uses: 1, dias: 3 }));
-    await app.request(`http://localhost/api/convite/${inv.token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Novo Amigo", nickname: "Novato", email: "novo@x.com", password: "senha1234" }) }, env, ctx);
-    await call(`/api/admin/convites/${inv.token}`, "admin", "DELETE");
+    // cadastro aberto (com telefone) + papel + remoção
+    await app.request("http://localhost/api/cadastro", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "novo@x.com", phone: "(11) 91234-5678", password: "senha1234", confirm: "senha1234", nickname: "Novato" }) }, env, ctx);
     // configuração (congela os extras dos jogos iniciados) e push
     await call("/api/admin/config", "admin", "PUT", { goalsEnabled: false, oddCap: 120 });
     await call("/api/push/inscrever", "lucas", "POST", { endpoint: "https://push.example/abc", keys: { p256dh: "k", auth: "a" } });
@@ -82,7 +80,7 @@ describe("schema.sql cobre tudo que o app grava", () => {
   });
 
   it("o teste realmente exercitou as tabelas principais", () => {
-    for (const t of ["users", "invites", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
+    for (const t of ["users", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
       expect(seenColls.has(t), t).toBe(true);
     }
   });
