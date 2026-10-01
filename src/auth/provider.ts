@@ -80,7 +80,7 @@ export class SupabaseAuth implements AuthProvider {
     url: string,
     private key: string,
     private sessionSecret: string,
-    private fetchImpl: typeof fetch = (input, init) => fetch(input, init),,
+    private fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.base = `${url.replace(/\/+$/, "")}/auth/v1`;
   }
