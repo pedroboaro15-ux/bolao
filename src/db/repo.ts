@@ -1,5 +1,5 @@
 import type { Db, Doc } from "./types";
-import type { Invite, Match, Prediction, Round, Standings, UserDoc } from "../types";
+import type { Match, Prediction, Round, Standings, UserDoc } from "../types";
 import { mergeSettings, type Settings } from "../lib/settings";
 
 export type WithId<T> = T & { id: string };
@@ -27,15 +27,6 @@ export class Repo {
   async users(): Promise<WithId<UserDoc>[]> {
     const rows = await this.db.query<UserDoc>("users");
     return rows.map(withId).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }
-
-  // ----- convites -----
-  async invite(token: string): Promise<Doc<Invite> | null> {
-    return this.db.get<Invite>(`invites/${token}`);
-  }
-  async invites(): Promise<WithId<Invite>[]> {
-    const rows = await this.db.query<Invite>("invites");
-    return rows.map(withId).sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
   }
 
   // ----- rodadas -----

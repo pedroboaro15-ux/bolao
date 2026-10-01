@@ -44,10 +44,10 @@ export function createApp() {
       hit = { user: await repo.user(uid), exp: Date.now() + 30_000 };
       userCache.set(uid, hit);
     }
-    // Conta no Supabase Auth sem linha em users (ex.: cadastro fora do convite): não entra.
+    // Conta no Supabase Auth sem linha em users (ex.: criada direto no painel do Supabase): não entra.
     if (!hit.user) {
       deleteCookie(c, COOKIE, { path: "/" });
-      throw unauthorized("Conta sem acesso. Peça um convite ao administrador.");
+      throw unauthorized("Conta sem acesso. Crie sua conta na tela de cadastro.");
     }
     c.set("user", hit.user);
     await next();

@@ -13,7 +13,7 @@ let cleanup = null;
 const PUBLIC = [
   [/^\/entrar\/?$/, loginPage],
   [/^\/esqueci\/?$/, forgotPage],
-  [/^\/convite\/([^/]+)\/?$/, signupPage],
+  [/^\/cadastro\/?$/, signupPage],
 ];
 
 const PRIVATE = [
@@ -56,7 +56,7 @@ async function route() {
   for (const [re, fn] of PUBLIC) {
     const m = re.exec(path);
     if (m) {
-      if (state.user && !path.startsWith("/convite")) return go("/", { replace: true });
+      if (state.user) return go("/", { replace: true });
       app.innerHTML = "";
       document.title = "Bolão";
       cleanup = fn(app, m) ?? null;
@@ -185,6 +185,26 @@ async function enablePush() {
 
 // ---------- telas de acesso ----------
 
+const EYE = '<svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+
+/** Campo de senha com o olhinho para mostrar/esconder o que foi digitado. */
+function pwField(name, label, autocomplete, extra = "") {
+  return `<label class="f">${label}<span class="pw"><input name="${name}" type="password" autocomplete="${autocomplete}" required ${extra}><button class="pw-eye" type="button" aria-label="Mostrar senha" aria-pressed="false">${EYE}</button></span></label>`;
+}
+
+function wirePasswordEyes(root) {
+  root.querySelectorAll(".pw-eye").forEach((b) => {
+    b.onclick = () => {
+      const input = b.parentElement.querySelector("input");
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      b.setAttribute("aria-pressed", String(show));
+      b.setAttribute("aria-label", show ? "Esconder senha" : "Mostrar senha");
+      b.classList.toggle("on", show);
+    };
+  });
+}
+
 function authFrame(inner) {
   return `<div class="auth"><div class="logo"><i></i>BOLÃO</div>${inner}</div>`;
 }
@@ -195,13 +215,14 @@ function loginPage(view) {
     <p class="lead">Palpite, some pontos e suba no ranking.</p>
     <form class="form card card-pad" id="f">
       <label class="f">E-mail<input name="email" type="email" autocomplete="username" inputmode="email" required></label>
-      <label class="f">Senha<input name="password" type="password" autocomplete="current-password" required></label>
+      ${pwField("password", "Senha", "current-password")}
       <div class="error" id="err" role="alert"></div>
       <button class="btn primary block" type="submit">Entrar</button>
       <a data-link href="/esqueci" class="muted" style="text-align:center">Esqueci a senha</a>
     </form>
-    <p class="muted" style="text-align:center;font-size:13px">O cadastro é só por convite. Peça o link a quem organiza o bolão.</p>
+    <p class="muted" style="text-align:center">Ainda não tem conta? <a data-link href="/cadastro"><b>Criar conta</b></a></p>
     ${state.config.demo ? `<div class="notice" style="margin-top:12px">Demonstração com dados de mentira. Toque para entrar direto:<div class="actions"><button class="btn small primary" type="button" data-demo="lucas@demo.local">Entrar como jogador</button><button class="btn small" type="button" data-demo="admin@demo.local">Entrar como admin</button></div></div>` : ""}`);
+  wirePasswordEyes(view);
   view.querySelectorAll("[data-demo]").forEach((b) => {
     b.onclick = () => {
       $("input[name=email]", view).value = b.dataset.demo;
@@ -254,11 +275,12 @@ function newPasswordPage(view, token) {
   view.innerHTML = authFrame(`
     <p class="lead">Escolha uma senha nova.</p>
     <form class="form card card-pad" id="f">
-      <label class="f">Senha nova (mínimo 8 caracteres)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-      <label class="f">Repita a senha<input name="again" type="password" autocomplete="new-password" required minlength="8"></label>
+      ${pwField("password", "Senha nova (mínimo 8 caracteres)", "new-password", 'minlength="8"')}
+      ${pwField("again", "Repita a senha", "new-password", 'minlength="8"')}
       <div class="error" id="err" role="alert"></div>
       <button class="btn primary block" type="submit">Salvar senha</button>
     </form>`);
+  wirePasswordEyes(view);
   $("#f").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -276,36 +298,41 @@ function newPasswordPage(view, token) {
   };
 }
 
-async function signupPage(view, m) {
-  document.title = "Convite · Bolão";
-  const token = m[1];
-  view.innerHTML = authFrame(`<p class="lead">Verificando convite…</p>`);
-  const info = await api(`/convite/${encodeURIComponent(token)}`).catch(() => ({ valido: false, motivo: "Não foi possível verificar o convite" }));
-  if (!info.valido) {
-    view.innerHTML = authFrame(`<div class="card card-pad"><p class="error">${esc(info.motivo)}</p><a class="btn block" data-link href="/entrar">Ir para o login</a></div>`);
-    return;
-  }
+function signupPage(view) {
+  document.title = "Criar conta · Bolão";
   view.innerHTML = authFrame(`
-    <p class="lead">Você foi convidado! Crie sua conta.</p>
-    <form class="form card card-pad" id="f">
-      <label class="f">Nome completo<input name="name" autocomplete="name" required minlength="2" maxlength="60"></label>
-      <label class="f">Apelido (aparece no ranking)<input name="nickname" autocomplete="nickname" required minlength="2" maxlength="20"></label>
+    <p class="lead">Crie sua conta para palpitar.</p>
+    <form class="form card card-pad" id="f" novalidate>
       <label class="f">E-mail<input name="email" type="email" autocomplete="username" inputmode="email" required></label>
-      <label class="f">Senha (mínimo 8 caracteres)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label class="f">Telefone (com DDD)<input name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(11) 91234-5678" required></label>
+      <label class="f">Apelido no ranking <span class="muted">(opcional)</span><input name="nickname" autocomplete="nickname" maxlength="20"></label>
+      ${pwField("password", "Senha (mínimo 8 caracteres)", "new-password", 'minlength="8"')}
+      ${pwField("confirm", "Confirmar senha", "new-password", 'minlength="8"')}
       <div class="error" id="err" role="alert"></div>
-      <button class="btn primary block" type="submit">Criar conta e entrar</button>
+      <button class="btn primary block" type="submit">Criar conta</button>
+      <a data-link href="/entrar" class="muted" style="text-align:center">Já tenho conta · Entrar</a>
     </form>`);
+  wirePasswordEyes(view);
+  $("input[name=phone]", view).oninput = (e) => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 11);
+    const cut = d.length > 10 ? 7 : 6;
+    e.target.value = d.length > cut ? `(${d.slice(0, 2)}) ${d.slice(2, cut)}-${d.slice(cut)}` : d.length > 2 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : d;
+  };
   $("#f").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("button[type=submit]", view);
+    const err = $("#err");
+    err.textContent = "";
+    const body = Object.fromEntries(new FormData(e.target));
+    if (!body.email || !body.phone || !body.password) return (err.textContent = "Preencha e-mail, telefone e senha.");
+    if (body.password !== body.confirm) return (err.textContent = "As senhas não são iguais.");
     btn.disabled = true;
-    $("#err").textContent = "";
     try {
-      const r = await api(`/convite/${encodeURIComponent(token)}`, { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
+      const r = await api("/cadastro", { method: "POST", body });
       state.user = r.usuario;
       go("/", { replace: true });
-    } catch (err) {
-      $("#err").textContent = err.message;
+    } catch (ex) {
+      err.textContent = ex.message;
       btn.disabled = false;
     }
   };

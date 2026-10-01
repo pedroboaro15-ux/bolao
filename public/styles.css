@@ -350,3 +350,13 @@ input, select, textarea { font-size: 16px; }
   .team:hover .tn { text-decoration: none; }
   .nav a:hover { color: #a0a0a0; }
 }
+
+/* campo de senha com o olhinho */
+.pw { position: relative; display: block; }
+.pw input { padding-right: 48px; }
+.pw-eye { position: absolute; right: 0; top: 0; height: 100%; min-width: 44px; display: grid; place-items: center; background: none; border: 0; color: var(--ink-2); cursor: pointer; border-radius: var(--r1); }
+.pw-eye svg { width: 22px; height: 22px; }
+.pw-eye .eye-off { display: none; }
+.pw-eye.on .eye-on { display: none; }
+.pw-eye.on .eye-off { display: block; }
+.pw-eye.on { color: var(--brand); }

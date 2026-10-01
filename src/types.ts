@@ -107,16 +107,8 @@ export interface UserDoc {
   name: string;
   nickname: string;
   email: string;
+  phone?: string | null;
   role: "admin" | "player";
-  created_at: Date;
-}
-
-export interface Invite {
-  max_uses: number;
-  uses: number;
-  expires_at: Date;
-  created_by: string;
-  revoked: boolean;
   created_at: Date;
 }
 

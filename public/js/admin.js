@@ -1,11 +1,10 @@
-// Área do administrador: jogos do dia → rodada, resultados, convites, usuários, configurações, uso das APIs.
+// Área do administrador: jogos do dia → rodada, resultados, usuários, configurações, uso das APIs.
 import { $, $$, api, avatar, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, odd, openSheet, toast } from "./util.js";
 import { state, go } from "./store.js";
 
 const TABS = [
   ["", "Jogos do dia"],
   ["rodadas", "Rodadas e resultados"],
-  ["convites", "Convites"],
   ["usuarios", "Usuários"],
   ["config", "Configurações"],
   ["api", "APIs"],
@@ -26,7 +25,7 @@ export function render(view, parts) {
   </div>`;
   extrasToggles($("#extras-box", view));
   const body = $("#admin-body", view);
-  const pages = { "": daily, rodadas: rounds, convites: invites, usuarios: users, config: settings, api: usage };
+  const pages = { "": daily, rodadas: rounds, usuarios: users, config: settings, api: usage };
   (pages[tab] ?? daily)(body, arg).catch((e) => (body.innerHTML = `<div class="card card-pad"><p class="error">${esc(e.message)}</p></div>`));
 }
 
@@ -261,60 +260,16 @@ function manualOdds(matchId, done) {
   };
 }
 
-// ---------- convites ----------
-
-async function invites(body) {
-  async function load() {
-    const d = await api("/admin/convites");
-    body.innerHTML = `
-      <div class="card card-pad form" style="margin-bottom:14px">
-        <div class="cols2"><label class="f">Quantas pessoas podem usar<input type="number" min="1" max="100" value="1" data-max></label><label class="f">Vale por (dias)<input type="number" min="1" max="60" value="7" data-dias></label></div>
-        <button class="btn primary" data-new>Gerar link de convite</button>
-      </div>
-      <div class="card" style="overflow:hidden">${
-        d.convites.length
-          ? d.convites
-              .map((c) => {
-                const dead = c.revoked || Date.parse(c.expires_at) < Date.now() || c.uses >= c.max_uses;
-                return `<div class="list-row"><div class="grow"><div class="mono">${esc(c.url)}</div><div class="muted" style="font-size:12px">${c.uses}/${c.max_uses} usos · vence ${fmtDate(new Date(c.expires_at).toISOString().slice(0, 10))} ${c.revoked ? "· revogado" : dead ? "· inativo" : ""}</div></div>
-                  ${dead ? "" : `<button class="btn small" data-copy="${esc(c.url)}">Copiar</button><button class="btn small danger" data-revoke="${esc(c.token)}">Revogar</button>`}</div>`;
-              })
-              .join("")
-          : `<div class="empty">Nenhum convite ainda.</div>`
-      }</div>`;
-  }
-  body.addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.matches("[data-new]"))
-      busy(b, async () => {
-        const r = await api("/admin/convites", { method: "POST", body: { max_uses: Number($("[data-max]", body).value), dias: Number($("[data-dias]", body).value) } });
-        await copy(r.url);
-        toast("Link criado e copiado!", "ok");
-        await load();
-      });
-    if (b.matches("[data-copy]")) copy(b.dataset.copy).then(() => toast("Link copiado!", "ok"));
-    if (b.matches("[data-revoke]") && confirm("Revogar este convite?")) busy(b, async () => (await api(`/admin/convites/${b.dataset.revoke}`, { method: "DELETE" }), load()));
-  });
-  await load();
-}
-
-async function copy(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    prompt("Copie o link:", text);
-  }
-}
-
 // ---------- usuários ----------
+
+const fmtPhone = (d) => (d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : d);
 
 async function users(body) {
   async function load() {
     const d = await api("/admin/usuarios");
     body.innerHTML = `<div class="card" style="overflow:hidden">${d.usuarios
       .map(
-        (u) => `<div class="list-row">${avatar(u.nickname)}<div class="grow"><b>${esc(u.nickname)}</b> <span class="muted">${esc(u.name)}</span><div class="muted" style="font-size:12px">${esc(u.email)}</div></div>
+        (u) => `<div class="list-row">${avatar(u.nickname)}<div class="grow"><b>${esc(u.nickname)}</b> <span class="muted">${esc(u.name)}</span><div class="muted" style="font-size:12px">${esc(u.email)}${u.phone ? " · " + esc(fmtPhone(u.phone)) : ""}</div></div>
         <span class="tag ${u.role === "admin" ? "joker" : ""}">${u.role === "admin" ? "admin" : "jogador"}</span>
         ${u.id === state.user.id ? '<span class="tag">você</span>' : `<button class="btn small" data-role="${u.role === "admin" ? "player" : "admin"}" data-id="${esc(u.id)}">${u.role === "admin" ? "Tirar admin" : "Tornar admin"}</button><button class="btn small danger" data-del="${esc(u.id)}" data-name="${esc(u.nickname)}">Remover</button>`}</div>`,
       )

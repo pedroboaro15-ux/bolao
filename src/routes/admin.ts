@@ -11,11 +11,6 @@ import { notifyFinished } from "../services/cron";
 import { pushConfigured, sendPush } from "../services/push";
 import { userView } from "./public";
 
-const randomToken = () => {
-  const b = crypto.getRandomValues(new Uint8Array(24));
-  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-
 const goal = (v: unknown) => {
   const n = Number(v);
   if (!Number.isInteger(n) || n < 0 || n > 30) throw badRequest("Placar inválido");
@@ -208,41 +203,11 @@ export function adminRoutes() {
     return c.json(res, res.ok ? 200 : 422);
   });
 
-  // ---------- convites ----------
-
-  r.get("/convites", async (c) => {
-    const { repo } = c.get("ctx");
-    const origin = new URL(c.req.url).origin;
-    const list = await repo.invites();
-    return c.json({ convites: list.map((i) => ({ token: i.id, url: `${origin}/convite/${i.id}`, max_uses: i.max_uses, uses: i.uses, expires_at: i.expires_at, revoked: i.revoked, created_at: i.created_at })) });
-  });
-
-  r.post("/convites", async (c) => {
-    const { repo } = c.get("ctx");
-    const body: any = await c.req.json().catch(() => ({}));
-    const max = Math.min(100, Math.max(1, Math.floor(Number(body.max_uses ?? 1)) || 1));
-    const days = Math.min(60, Math.max(1, Math.floor(Number(body.dias ?? 7)) || 7));
-    const token = randomToken();
-    const now = new Date();
-    await repo.db.commit([
-      { op: "set", path: `invites/${token}`, data: { max_uses: max, uses: 0, expires_at: new Date(now.getTime() + days * 86400_000), created_by: c.get("user").id, revoked: false, created_at: now }, mustNotExist: true },
-    ]);
-    return c.json({ token, url: `${new URL(c.req.url).origin}/convite/${token}` }, 201);
-  });
-
-  r.delete("/convites/:token", async (c) => {
-    const { repo } = c.get("ctx");
-    const token = c.req.param("token");
-    if (!(await repo.invite(token))) throw notFound("Convite não encontrado");
-    await repo.db.commit([{ op: "merge", path: `invites/${token}`, data: { revoked: true } }]);
-    return c.json({ ok: true });
-  });
-
   // ---------- usuários ----------
 
   r.get("/usuarios", async (c) => {
     const { repo } = c.get("ctx");
-    return c.json({ usuarios: (await repo.users()).map((u) => userView(u.id, u)) });
+    return c.json({ usuarios: (await repo.users()).map((u) => ({ ...userView(u.id, u), phone: u.phone ?? null })) });
   });
 
   r.post("/usuarios/:id/papel", async (c) => {
