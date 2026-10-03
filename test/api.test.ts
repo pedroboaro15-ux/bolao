@@ -218,3 +218,10 @@ describe("configurações do admin", () => {
     await call("/api/admin/config", { method: "PUT", user: "admin", body: { jokerMultiplier: 2, oddCap: 150 } });
   });
 });
+
+describe("jogos do dia no admin", () => {
+  it("só lista jogos que ainda não começaram", async () => {
+    const d = await json(await call("/api/admin/jogos-do-dia", { user: "admin" }));
+    expect(d.jogos.every((j: any) => Date.parse(j.kickoff) > Date.now())).toBe(true);
+  });
+});

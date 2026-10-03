@@ -67,6 +67,13 @@ export function parseChampionship(b: any): Omit<Championship, "created_at"> {
   return { name, start_date, end_date, prize };
 }
 
+/** Há rodada (não rascunho) no dia de hoje? Com rodada, votos e sugestões ficam fechados. */
+async function hasRoundToday(repo: Repo): Promise<boolean> {
+  const today = bolaoDay();
+  return (await repo.rounds(30)).some((r) => r.date === today && r.status !== "draft");
+}
+const PEDIDOS_FECHADOS = "Hoje já tem rodada. Votos e sugestões abrem nos dias sem rodada.";
+
 /** Rotas do participante (já logado). */
 export function extraPlayerRoutes() {
   const r = new Hono<AppEnv>();
@@ -76,6 +83,7 @@ export function extraPlayerRoutes() {
   r.get("/pedidos", async (c) => {
     const { repo } = c.get("ctx");
     const user = c.get("user");
+    if (await hasRoundToday(repo)) return c.json({ fechado: true, motivo: PEDIDOS_FECHADOS, jogos: [] });
     const today = bolaoDay();
     const dates = [today, addDays(today, 1)];
     const caches = await repo.db.getMany<any>(dates.map((d) => `fixtures_cache/${d}`));
@@ -101,6 +109,7 @@ export function extraPlayerRoutes() {
     const b: any = await c.req.json().catch(() => ({}));
     const fixture = Number(b.fixture_id);
     if (!Number.isInteger(fixture) || fixture <= 0) throw badRequest("Jogo inválido");
+    if (await hasRoundToday(repo)) throw badRequest(PEDIDOS_FECHADOS);
     const today = bolaoDay();
     const caches = await repo.db.getMany<any>([today, addDays(today, 1)].map((d) => `fixtures_cache/${d}`));
     const f = caches.flatMap((d) => d?.data.fixtures ?? []).find((x: any) => x.id === fixture);
@@ -121,6 +130,7 @@ export function extraPlayerRoutes() {
     const user = c.get("user");
     const text = clean((await c.req.json().catch(() => ({})) as any).texto, 280);
     if (text.length < 3) throw badRequest("Escreva a sugestão");
+    if (await hasRoundToday(repo)) throw badRequest(PEDIDOS_FECHADOS);
     const slot = await takeSlot(repo.db, `sugestao:${user.id}`, 5, 86400_000);
     if (!slot.ok) throw new HttpError(429, `Você já mandou 5 sugestões hoje. Volte em ${waitText(slot.resetAt)}.`);
     await repo.db.commit([{ op: "set", path: `suggestions/s_${rand()}`, data: { kind: "texto", user_id: user.id, date: bolaoDay(), fixture_id: null, label: null, text, created_at: new Date() } }]);

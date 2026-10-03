@@ -10,6 +10,10 @@ export async function renderPedidos(box) {
     box.innerHTML = `<p class="error">${esc(e.message)}</p>`;
     return;
   }
+  if (d.fechado) {
+    box.innerHTML = `<p class="muted">${esc(d.motivo)}</p>`;
+    return;
+  }
   const paint = () => {
     box.innerHTML = `
       ${

@@ -397,3 +397,14 @@ input, select, textarea { font-size: 16px; }
 /* área de toque mínima no celular para links pequenos (apagar comentário, voltar) */
 .linkish { min-height: 44px; min-width: 44px; padding: 0 6px; }
 .page > p > a[data-link] { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* enquadramento de escudos e logos: tudo cabe inteiro, centralizado, sem cortar nem esticar */
+.crest { width: 26px; height: 26px; padding: 1px; box-sizing: border-box; }
+.crest img { object-fit: contain; object-position: center; border-radius: 3px; image-rendering: auto; }
+.crest.lg { width: 40px; height: 40px; }
+.crest.xl { width: 64px; height: 64px; padding: 2px; }
+.team { gap: 10px; }
+/* logos de campeonato: fundo claro (muitos logos são escuros e sumiam no tema escuro) */
+.league-icon { width: 22px; height: 22px; padding: 2px; box-sizing: border-box; background: #fff; border: 1px solid var(--line); border-radius: 5px; }
+.league-icon img { object-fit: contain; }
+.side-item .league-icon, .group-h .league-icon { width: 24px; height: 24px; }

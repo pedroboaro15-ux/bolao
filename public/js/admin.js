@@ -103,7 +103,7 @@ async function daily(body) {
           <label class="f">Campeonato<select data-liga><option value="0">Todos (mais relevantes)</option><option value="br" ${S.liga === "br" ? "selected" : ""}>Só Brasil (${d.brasil ?? 0})</option>${d.ligas.map((l) => `<option value="${l.id}" ${l.id === S.liga ? "selected" : ""}>${l.country === "Brazil" ? "BR · " : ""}${esc(l.name)} (${l.count})</option>`).join("")}</select></label>
         </div>
         <div class="notice">Dia do bolão: das <b>06:00 de ${fmtDate(S.date)}</b> até as <b>06:00 de ${fmtDate(nextDay(S.date))}</b> (horário de São Paulo). Limite de <b>${d.limite}</b> jogos por dia; já escolhidos: <b>${d.ja_escolhidos}</b>.</div>
-        <div class="muted" style="font-size:13px">${d.total} jogos no dia · lista de ${fmtWhen(d.fetched_at)} · mostrando os 30 mais relevantes. <button class="btn small" data-refresh>${icon("refresh").replace("<svg", '<svg width="14" height="14"')} Buscar de novo (gasta 2 chamadas)</button></div>
+        <div class="muted" style="font-size:13px">${d.total} jogos ainda por começar${d.comecados ? ` (${d.comecados} já começaram e saíram da lista)` : ""} · lista de ${fmtWhen(d.fetched_at)} · mostrando os 30 mais relevantes. <button class="btn small" data-refresh>${icon("refresh").replace("<svg", '<svg width="14" height="14"')} Buscar de novo (gasta 2 chamadas)</button></div>
       </div>
       <div class="card" style="overflow:hidden">
         ${d.jogos.length ? d.jogos.map((f) => `<label class="pick" style="cursor:${f.ja_em_rodada ? "not-allowed" : "pointer"}">
@@ -346,9 +346,10 @@ async function questions(body) {
     const close = q ? new Date(q.closes_at) : new Date(Date.parse(S.date + "T21:00:00-03:00"));
     return `<form class="card card-pad form" data-qform style="margin-bottom:14px">
       <h3 style="margin:0">${q ? "Editar" : "Nova pergunta, jogo ou luta"}</h3>
-      <div class="cols2"><label class="f">Tipo<select name="kind">${Object.entries(S.data.tipos).map(([k, t]) => `<option value="${k}" ${k === kind ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <div class="cols2"><input type="hidden" name="kind" value="pergunta">
         <label class="f">Fecha em (hora do seu aparelho)<input name="closes_at" type="datetime-local" value="${localInput(close)}" required></label></div>
       <label class="f">Pergunta<input name="title" maxlength="160" value="${esc(q?.title ?? "")}" placeholder="${esc(KIND_HELP[kind].title)}" required></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="hint" style="margin:0">Atalhos:</span><button class="btn small" type="button" data-preset="sn">Sim / Não</button><button class="btn small" type="button" data-preset="2">2 opções</button><button class="btn small" type="button" data-preset="3">3 opções</button></div>
       <label class="f">Opções e odds (uma por linha: Nome = odd)<textarea name="options" rows="5" placeholder="${esc(KIND_HELP[kind].options)}" required>${esc(q ? optionsText(q.options) : "")}</textarea></label>
       <p class="hint" style="margin:0">Acertar vale odd − 1 (ex.: 1.80 vale +0.80). As odds que você digita já são as que valem. Os pontos entram no ranking do mês e no geral.</p>
       <div class="error" data-err role="alert"></div>
@@ -418,6 +419,12 @@ async function questions(body) {
     const b = e.target.closest("button");
     if (!b) return;
     if (b.matches("[data-cancel]")) return ((S.editing = null), paint());
+    if (b.dataset.preset) {
+      const ta = b.closest("form").options;
+      ta.value = { sn: "Sim = 1.90\nNão = 1.90", 2: "Opção A = 1.90\nOpção B = 1.90", 3: "Opção A = 2.50\nOpção B = 3.00\nOpção C = 3.00" }[b.dataset.preset];
+      ta.focus();
+      return;
+    }
     if (b.dataset.editQ) return ((S.editing = b.dataset.editQ), paint(), window.scrollTo(0, 0));
     const go = (url, opts, msg) => busy(b, async () => (await api(url, opts), toast(msg, "ok"), await load()));
     if (b.dataset.res && confirm("Marcar esta opção como a certa? Os pontos são calculados na hora.")) go(`/admin/perguntas/${b.dataset.res}/resultado`, { method: "POST", body: { option_id: b.dataset.opt } }, "Resultado salvo e pontos calculados.");

@@ -93,7 +93,8 @@ export async function createRound(repo: Repo, input: CreateRoundInput, fixtures:
   const chosen = ids.map((id) => byId.get(id));
   if (chosen.some((f) => !f)) throw badRequest("Algum jogo escolhido não está na lista do dia");
   const now = new Date();
-  if ((chosen as CachedFixture[]).every((f) => f.kickoff <= now)) throw badRequest("Todos os jogos escolhidos já começaram");
+  const started = (chosen as CachedFixture[]).filter((f) => f.kickoff <= now);
+  if (started.length) throw badRequest(`Jogo já começou: ${started.map((f) => `${f.home.name} x ${f.away.name}`).join(", ")}. Tire da seleção.`);
 
   const roundId = await freeRoundId(repo, input.date);
   const writes: Write[] = [];

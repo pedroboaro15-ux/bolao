@@ -47,13 +47,16 @@ describe("perguntas do dia: validação e pontos", () => {
 });
 
 describe("perguntas do dia: fluxo completo", () => {
-  it("admin cria (pergunta, basquete, UFC); jogador não pode criar", async () => {
+  it("admin cria pergunta (inclusive Sim/Não); basquete e UFC em espera; jogador não pode criar", async () => {
     expect((await call("/api/admin/perguntas", { method: "POST", user: "lucas", body: base() })).status).toBe(403);
-    for (const kind of ["pergunta", "basquete", "ufc"]) {
-      expect((await call("/api/admin/perguntas", { method: "POST", user: "admin", body: base({ kind, title: `Evento ${kind}` }) })).status).toBe(201);
+    expect((await call("/api/admin/perguntas", { method: "POST", user: "admin", body: base({ title: "Vai ter segundo turno?", options: [{ label: "Sim", odd: 1.9 }, { label: "Não", odd: 1.9 }] }) })).status).toBe(201);
+    for (const kind of ["basquete", "ufc"]) {
+      const r = await call("/api/admin/perguntas", { method: "POST", user: "admin", body: base({ kind }) });
+      expect(r.status).toBe(400);
+      expect((await json(r)).erro).toMatch(/em espera/);
     }
     const d = await json(await call(`/api/perguntas?date=${DAY}`, { user: "lucas" }));
-    expect(d.perguntas.map((q: any) => q.tipo).sort()).toEqual(["Basquete", "Pergunta", "UFC"]);
+    expect(d.perguntas.find((q: any) => q.title === "Vai ter segundo turno?").options.map((o: any) => o.label)).toEqual(["Sim", "Não"]);
   });
 
   it("responde, troca de opção, não vê os outros antes de fechar; resultado pontua e entra no ranking geral", async () => {

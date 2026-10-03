@@ -64,13 +64,10 @@ describe("schema.sql cobre tudo que o app grava", () => {
     // cadastro aberto (com telefone) + papel + remoção
     await app.request("http://localhost/api/cadastro", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "novo@x.com", phone: "(11) 91234-5678", password: "senha1234", confirm: "senha1234", nickname: "Novato" }) }, env, ctx);
     // perguntas do dia: criar, responder, resultado (grava answers e o ranking do dia)
-    const q = await json(await call("/api/admin/perguntas", "admin", "POST", { date: "2026-10-04", kind: "ufc", title: "Luta principal", closes_at: new Date(Date.now() + 3600_000).toISOString(), options: [{ label: "A", odd: 1.6 }, { label: "B", odd: 2.4 }] }));
+    const q = await json(await call("/api/admin/perguntas", "admin", "POST", { date: "2026-10-04", kind: "pergunta", title: "Vai ter segundo turno?", closes_at: new Date(Date.now() + 3600_000).toISOString(), options: [{ label: "A", odd: 1.6 }, { label: "B", odd: 2.4 }] }));
     await call(`/api/perguntas/${q.id}/resposta`, "lucas", "PUT", { option_id: "o2" });
     await call(`/api/admin/perguntas/${q.id}/resultado`, "admin", "POST", { option_id: "o2" });
     // social e campeonatos: pedido, sugestão, comentário, reação, campeonato
-    const ped = await json(await call("/api/pedidos", "lucas"));
-    if (ped.jogos[0]) await call("/api/pedidos/voto", "lucas", "POST", { fixture_id: ped.jogos[0].id });
-    await call("/api/pedidos/sugestao", "lucas", "POST", { texto: "Coloquem o Fla-Flu" });
     await call("/api/jogos/900202/comentarios", "lucas", "POST", { texto: "Vai dar empate" });
     await call("/api/palpites/900202_ana/reacao", "lucas", "POST", { emoji: "🔥" });
     await call("/api/admin/campeonatos", "admin", "POST", { name: "Copa da Galera", start_date: "2026-09-01", end_date: "2026-12-31", prize: "R$ 100 para o 1º" });
@@ -83,6 +80,12 @@ describe("schema.sql cobre tudo que o app grava", () => {
     await call("/api/admin/config", "admin", "PUT", { maxMatchesPerDay: 30 });
     await call("/api/admin/rodadas", "admin", "POST", { date: dia.date, title: "Extra", fixtureIds: dia.jogos.slice(0, 2).map((j: any) => j.id), open: true });
     await call("/api/times/1", "lucas");
+    // pedidos só existem em dia sem rodada: apaga as de hoje e vota/sugere
+    const hoje = (await json(await call("/api/rodada/atual", "lucas"))).hoje;
+    for (const r of (await json(await call("/api/admin/rodadas", "admin"))).rodadas.filter((x: any) => x.date === hoje)) await call(`/api/admin/rodadas/${r.id}`, "admin", "DELETE");
+    const ped = await json(await call("/api/pedidos", "lucas"));
+    await call("/api/pedidos/voto", "lucas", "POST", { fixture_id: ped.jogos[0].id });
+    await call("/api/pedidos/sugestao", "lucas", "POST", { texto: "Coloquem o Fla-Flu" });
     await new Repo(new MemoryDb()).addUsage("2026-09-30", "api-football"); // contador de uso da API
   });
 

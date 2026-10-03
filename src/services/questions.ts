@@ -13,6 +13,8 @@ import { rebuildTotals, sortRows } from "./standings";
  */
 
 export const KINDS: Record<QuestionKind, string> = { pergunta: "Pergunta", basquete: "Basquete", ufc: "UFC" };
+/** Por enquanto só perguntas (o foco é o futebol). Basquete e UFC voltam com API, como o futebol. */
+export const ACTIVE_KINDS: QuestionKind[] = ["pergunta"];
 
 export interface QuestionInput {
   date: string;
@@ -26,6 +28,7 @@ export interface QuestionInput {
 export function parseQuestionInput(body: any, isDate: (s: string) => boolean): QuestionInput {
   const kind = String(body?.kind ?? "pergunta") as QuestionKind;
   if (!(kind in KINDS)) throw badRequest("Tipo inválido");
+  if (!ACTIVE_KINDS.includes(kind)) throw badRequest("Basquete e UFC estão em espera: vão entrar depois, com jogos e odds automáticos como no futebol");
   const title = String(body?.title ?? "").trim().replace(/\s+/g, " ");
   if (title.length < 3 || title.length > 160) throw badRequest("Escreva a pergunta (de 3 a 160 letras)");
   const date = String(body?.date ?? "");

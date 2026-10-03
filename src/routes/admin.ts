@@ -37,12 +37,15 @@ export function adminRoutes() {
     const liga = soBrasil ? 0 : Number(ligaQ);
 
     const ligas = new Map<number, { id: number; name: string; country?: string; count: number }>();
-    for (const f of cache.fixtures) {
+    for (const f of cache.fixtures.filter((f) => f.kickoff.getTime() > Date.now())) {
       const cur = ligas.get(f.league.id) ?? { id: f.league.id, name: f.league.name, country: f.league.country, count: 0 };
       cur.count++;
       ligas.set(f.league.id, cur);
     }
-    const shown = cache.fixtures.filter((f) => (soBrasil ? isBrazil(f) : !liga || f.league.id === liga)).slice(0, soBrasil || liga ? 80 : 30);
+    // Jogo que já começou não pode entrar numa rodada (ninguém conseguiria palpitar): some da lista e da contagem.
+    const agora = Date.now();
+    const futuros = cache.fixtures.filter((f) => f.kickoff.getTime() > agora);
+    const shown = futuros.filter((f) => (soBrasil ? isBrazil(f) : !liga || f.league.id === liga)).slice(0, soBrasil || liga ? 80 : 30);
     const taken = new Set((await repo.matchesByIds(shown.map((f) => String(f.id)))).map((m) => m.id));
     const ja = await chosenToday(repo, date);
     return c.json({
@@ -51,8 +54,9 @@ export function adminRoutes() {
       limite: settings.maxMatchesPerDay,
       ja_escolhidos: ja,
       fetched_at: cache.fetched_at,
-      total: cache.total,
-      brasil: cache.fixtures.filter(isBrazil).length,
+      total: futuros.length,
+      comecados: cache.fixtures.length - futuros.length,
+      brasil: futuros.filter(isBrazil).length,
       ligas: [...ligas.values()].sort((a, b) => Number(b.country === "Brazil") - Number(a.country === "Brazil") || b.count - a.count),
       jogos: shown.map((f) => ({ ...f, ja_em_rodada: taken.has(String(f.id)) })),
     });
