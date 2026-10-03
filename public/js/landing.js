@@ -15,7 +15,7 @@ export function renderLanding(view) {
     <div class="lp-field" aria-hidden="true"><i class="c"></i><i class="l"></i><i class="d"></i></div>
     <div class="lp-in">
       <header class="lp-top">
-        <div class="lp-logo"><span></span>BOLÃO</div>
+        <div class="lp-logo"><img src="/icons/ball-64.png" alt="" width="30" height="30">BOLÃO</div>
         <a class="lp-ghost" data-link href="/entrar">Entrar</a>
       </header>
 
