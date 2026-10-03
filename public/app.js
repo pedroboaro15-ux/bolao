@@ -3,6 +3,7 @@ import { state, setGo } from "./js/store.js";
 import * as roundPage from "./js/round.js";
 import * as rankPage from "./js/ranking.js";
 import * as adminPage from "./js/admin.js";
+import { renderLanding } from "./js/landing.js";
 
 const app = document.getElementById("app");
 
@@ -63,7 +64,15 @@ async function route() {
       return;
     }
   }
-  if (!state.user) return go("/entrar", { replace: true });
+  if (!state.user) {
+    if (path === "/") {
+      app.innerHTML = "";
+      cleanup = renderLanding(app) ?? null;
+      window.scrollTo(0, 0);
+      return;
+    }
+    return go("/entrar", { replace: true });
+  }
 
   for (const [re, fn] of PRIVATE) {
     const m = re.exec(path);

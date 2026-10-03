@@ -371,7 +371,10 @@ function matchCard(m) {
     .map((k) => {
       const label = k === "1" ? "Casa" : k === "2" ? "Fora" : "Empate";
       const cls = real === k ? "hit" : locked && cur?.pick_1x2 === k && scored ? "miss" : "";
-      return `<button class="odd ${cls}" data-act="w" data-m="${m.id}" data-v="${k}" aria-pressed="${cur?.pick_1x2 === k}" aria-label="${label}, odd ${odd(o1?.[k])}" ${locked || mode === "cs" ? "disabled" : ""}><span>${k}</span><b>${odd(o1?.[k])}</b></button>`;
+      // Sem odds ainda: o botão mostra o time (ou "Empate") e já dá para escolher; a odd aparece quando chegar.
+      const who = k === "1" ? m.home.name : k === "2" ? m.away.name : "Empate";
+      const value = o1 ? `<b>${odd(o1[k])}</b>` : `<b class="no-odd">${esc(who)}</b>`;
+      return `<button class="odd ${cls}${o1 ? "" : " waiting"}" data-act="w" data-m="${m.id}" data-v="${k}" aria-pressed="${cur?.pick_1x2 === k}" aria-label="${label}${o1 ? `, odd ${odd(o1[k])}` : `: ${esc(who)}`}" ${locked || mode === "cs" ? "disabled" : ""}><span>${k}</span>${value}</button>`;
     })
     .join("");
 
@@ -397,8 +400,8 @@ function matchCard(m) {
     ? `<span>${modeLabel}</span>`
     : `<div class="seg" role="group" aria-label="Palpite extra"><button aria-pressed="${mode === null}" data-act="mode" data-m="${m.id}" data-v="none">Só vencedor</button>${ex.ou ? `<button aria-pressed="${mode === "ou"}" data-act="mode" data-m="${m.id}" data-v="ou">Gols</button>` : ""}${ex.cs ? `<button aria-pressed="${mode === "cs"}" data-act="mode" data-m="${m.id}" data-v="cs">Placar exato</button>` : ""}</div>`;
   const showExtra = locked ? !!(ex.ou || ex.cs) || !!mode : ex.ou || ex.cs;
-  const noOdds = !o1 && !locked ? `<div class="hint err">As odds ainda não saíram. Você já pode palpitar, mas o jogo só vale pontos se houver odds no início da partida.</div>` : "";
-  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>${locked ? "odd congelada no início" : o1 ? `odd justa · congela às ${fmtClock(m.kickoff_utc)}` : "odd justa"}</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
+  const noOdds = !o1 && !locked ? `<div class="hint">Odds a caminho. Já dá para escolher o vencedor: os pontos usam a odd do início do jogo.</div>` : "";
+  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>${locked ? "odd congelada no início" : o1 ? `odd justa · congela às ${fmtClock(m.kickoff_utc)}` : "odds a caminho"}</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
 
   let foot;
   if (scored) {
@@ -417,7 +420,7 @@ function matchCard(m) {
     if (err) status = `<span class="hint err">${esc(err)}</span>`;
     else if (dirty(m) && complete(d)) status = `<span><i class="st-dot pending"></i>Salvando…</span>`;
     else if (dirty(m)) status = `<span class="hint err"><i class="st-dot warn"></i>${d?.pick_1x2 ? (d.mode === "ou" ? "Falta escolher mais ou menos de 2,5 (ou toque em Só vencedor)" : "Falta o placar") : "Falta escolher o vencedor"}</span>`;
-    else if (mine) status = `<span><i class="st-dot"></i>Salvo · pode render <b class="num">+${pts(maxPoints(m, mine))}</b></span>`;
+    else if (mine) status = o1 ? `<span><i class="st-dot"></i>Salvo · pode render <b class="num">+${pts(maxPoints(m, mine))}</b></span>` : `<span><i class="st-dot"></i>Salvo · a odd aparece quando chegar</span>`;
     else status = `<span class="hint">${ex.ou || ex.cs ? "Escolha o vencedor (o extra é opcional)" : "Escolha o vencedor"}</span>`;
     const jk = S.data.coringa.ativo ? `<button class="jk" data-act="joker" data-m="${m.id}" aria-pressed="${!!d?.joker}" ${!complete(d) ? "disabled" : ""} title="Vale ×${S.data.coringa.multiplicador} neste jogo. Um por rodada.">${d?.joker ? `Coringa ×${S.data.coringa.multiplicador}` : "Usar coringa"}</button>` : "";
     foot = `${status}${jk}`;
