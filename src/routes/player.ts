@@ -16,7 +16,13 @@ import { refreshLive } from "../services/live";
 import { answersOf, isClosed, isSettledQ, questionView, questionsOfDay } from "../services/questions";
 import { bolaoDay, isDateString } from "../lib/dates";
 
-const roundSummary = (r: { id: string; title: string; date: string; status: string }) => ({ id: r.id, title: r.title, date: r.date, status: r.status });
+/** Rodada de um dia que já passou aparece como encerrada, mesmo se algum resultado ainda não chegou. */
+const roundSummary = (r: { id: string; title: string; date: string; status: string }, today = bolaoDay()) => ({
+  id: r.id,
+  title: r.title,
+  date: r.date,
+  status: r.date < today && r.status !== "draft" ? "finished" : r.status,
+});
 
 async function roundView(repo: Repo, roundId: string, userId: string, settings: Settings, now: Date, isAdmin: boolean) {
   const round = await repo.round(roundId);
@@ -41,11 +47,16 @@ function liveInBackground(c: any, repo: Repo, settings: Settings, roundId: strin
 /** O ranking guarda o apelido da época; aqui ele é trocado pelo apelido de agora (a pessoa pode ter mudado). */
 const withNick = <T extends { user_id?: string; nickname?: string }>(x: T, nick: Map<string, string>): T => ({ ...x, nickname: (x.user_id && nick.get(x.user_id)) || x.nickname });
 
-/** Rodada atual: a aberta mais recente; senão a última fechada/encerrada. `outras` = as mais recentes, para navegar. */
+/**
+ * Rodada atual = a do DIA DE HOJE do bolão (a aberta, se houver mais de uma). Sem rodada hoje: null, e a tela de início
+ * mostra os pedidos (votar em jogos, sugerir). Rodadas de dias anteriores aparecem como encerradas. `outras` = as mais recentes.
+ */
 async function roundsNav(repo: Repo) {
+  const today = bolaoDay();
   const rounds = (await repo.rounds(30)).filter((x) => x.status !== "draft");
-  const current = rounds.find((x) => x.status === "open") ?? rounds.find((x) => x.status === "closed") ?? rounds[0];
-  return { outras: rounds.slice(0, 10).map(roundSummary), atual: current?.id ?? null };
+  const ofToday = rounds.filter((x) => x.date === today);
+  const current = ofToday.find((x) => x.status === "open") ?? ofToday[0];
+  return { outras: rounds.slice(0, 10).map((x) => roundSummary(x, today)), atual: current?.id ?? null, hoje: today };
 }
 
 export function playerRoutes() {
@@ -54,7 +65,7 @@ export function playerRoutes() {
   r.get("/rodadas", async (c) => {
     const { repo } = c.get("ctx");
     const rounds = (await repo.rounds(60)).filter((x) => x.status !== "draft");
-    return c.json({ rodadas: rounds.map(roundSummary) });
+    return c.json({ rodadas: rounds.map((x) => roundSummary(x)) });
   });
 
   // Rodada atual: a aberta mais recente; senão a última fechada/encerrada.
@@ -188,7 +199,7 @@ export function playerRoutes() {
       const [preds, users] = await Promise.all([repo.predictionsOfMatch(match.id), repo.users()]);
       const nick = new Map(users.map((u) => [u.id, u.nickname]));
       palpites = preds
-        .map((p) => ({ user_id: p.user_id, nickname: nick.get(p.user_id) ?? "?", ...predictionView(p, view.extras)! }))
+        .map((p) => ({ id: p.id, user_id: p.user_id, nickname: nick.get(p.user_id) ?? "?", ...predictionView(p, view.extras)! }))
         .sort((a, b) => (b.points ?? -1) - (a.points ?? -1) || a.nickname.localeCompare(b.nickname, "pt-BR"));
     }
     return c.json({ jogo: view, rodada: roundSummary(round), palpites });
@@ -227,7 +238,7 @@ export function playerRoutes() {
       zebra: st?.zebra ? withNick(st.zebra as any, nick) : null,
       streaks: (st?.streaks ?? []).map((x) => withNick(x, nick)),
       updated_at: st?.updated_at ?? null,
-      opcoes: { rodadas: rounds.slice(0, 30).map(roundSummary), meses },
+      opcoes: { rodadas: rounds.slice(0, 30).map((x) => roundSummary(x)), meses },
     });
   });
 

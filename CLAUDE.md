@@ -124,6 +124,10 @@ fixtures_cache id (AAAA-MM-DD), data[jsonb]   -- jogos do dia do calendário com
 team_cache     id (id do time), data[jsonb]   -- últimos 5 e próximos 3 jogos (validade ~12 h)
 rate_limits    id ({chave}:{janela}:{n}), created_at   -- vagas dos limites de cadastro e login (o cron apaga as antigas)
 questions      id, date, kind('pergunta'|'basquete'|'ufc'), title, options[jsonb {id,label,odd}], closes_at, result, voided, created_at
+suggestions    id, kind('voto'|'texto'), user_id, date, fixture_id, label, text, created_at
+comments       id, match_id, round_id, user_id, text, created_at
+reactions      id ({palpite}_{usuário}_{emoji}), prediction_id, match_id, round_id, user_id, emoji, created_at
+championships  id, name, start_date, end_date, prize, created_at
 answers        id ({questionId}_{userId}), question_id, user_id, date, option_id, points, hits, created_at, updated_at
 ```
 Mercados: `1X2`, `OU25` (`over`,`under`) e `CS` (`2-1` etc.). A odd bruta e a justa ficam dentro do jogo:
@@ -238,6 +242,10 @@ Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da ma
 - **Foco no Brasil:** a API traz mais de mil jogos por dia; o cache guarda os 150 mais relevantes **e todos os do Brasil**. Todo jogo de campeonato brasileiro ganha `brazilBonus` (padrão 40, separado dos pesos de liga, então vale mesmo com pesos antigos salvos), e a Série B/C/D têm peso próprio (72 = 60, 75 = 45, 76 = 30). A relevância é recalculada ao ler o cache. No admin, o filtro "Só Brasil" mostra até 80 jogos brasileiros.
 - **Perguntas do dia** (`questions`, `answers`): eventos com odds digitadas pelo admin, do tipo `pergunta` (ex.: eleição), `basquete` ou `ufc` (outros esportes depois). Uma opção por pessoa até `closes_at` (hora do servidor); as escolhas dos outros só aparecem depois de fechar. Acerto vale `odd − 1` (as odds digitadas já são as que valem). Dar o resultado fecha a pergunta e grava `standings/questions_{dia}` com scope "round", que entra sozinho no ranking do mês e no geral (não no ranking de uma rodada de jogos). Admin → Perguntas do dia: criar (opções "Nome = odd", uma por linha), editar (não apaga opção já escolhida), "Deu esta", anular, excluir. Na tela de início a seção fica acima dos jogos.
 - **Limites sem a tabela:** se a tabela `rate_limits` ainda não existir (schema.sql não rodado), o limite libera e registra o erro em vez de travar o login.
+- **Rodada de hoje:** a tela de início mostra só a rodada do dia do bolão de hoje; rodadas de dias anteriores aparecem como "encerrada" (`roundSummary`). Jogo começado há mais de 150 min sem resultado mostra "Aguardando resultado". Sem rodada hoje: "Sem rodada hoje" com as Perguntas do dia, votos em jogos (`fixtures_cache` de hoje e amanhã, até 24) e sugestão escrita (5 por pessoa por dia) — tabela `suggestions`; o admin vê em Admin → Pedidos.
+- **Comentários e reações** (`comments`, `reactions`): comentários em cada jogo (280 letras, 6 por minuto por pessoa; o autor ou o admin apagam). Reações (🔥 😂 👏 😱 🤡) aos palpites da galera só depois do apito (antes ninguém vê os palpites), nunca ao próprio, clicar de novo tira.
+- **Campeonatos** (`championships`): nome, período e premiação/regras. O ranking do campeonato é calculado na leitura somando `standings/round_{id}` das rodadas do período e `standings/questions_{dia}`; aba "Campeonato" no Ranking. O geral continua somando tudo.
+- **Excluir rodada** (Admin → Rodadas → Excluir): apaga jogos, palpites, comentários, reações e o ranking da rodada, e refaz mês e geral. **Buscar placares agora**: pega o placar de jogos terminados sem resultado, sem o limite de 36 h do automático.
 - **Placar:** vale o placar dos 90 minutos (`score.fulltime`), que é o que os mercados 1X2, O/U e placar exato liquidam.
 - **Odds do placar exato:** mercado sem margem quando a API traz esse placar; senão Poisson ajustado ao 1X2 (+ O/U), com teto configurável (150).
 - **Acertos (desempate):** vencedor e extra contam 1 cada; placar exato conta 1 (substitui o vencedor).

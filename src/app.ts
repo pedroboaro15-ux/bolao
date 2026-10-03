@@ -6,6 +6,7 @@ import { ConflictError } from "./db/types";
 import { HttpError, forbidden, unauthorized } from "./lib/errors";
 import { playerRoutes } from "./routes/player";
 import { adminRoutes } from "./routes/admin";
+import { extraAdminRoutes, extraPlayerRoutes } from "./routes/extra";
 import { publicRoutes } from "./routes/public";
 
 
@@ -54,12 +55,14 @@ export function createApp() {
   });
 
   app.route("/api", playerRoutes());
+  app.route("/api", extraPlayerRoutes());
 
   app.use("/api/admin/*", async (c, next) => {
     if (c.get("user").role !== "admin") throw forbidden("Área do administrador");
     await next();
   });
   app.route("/api/admin", adminRoutes());
+  app.route("/api/admin", extraAdminRoutes());
 
   app.all("/api/*", (c) => c.json({ erro: "Rota não encontrada" }, 404));
   return app;

@@ -34,8 +34,8 @@ const check = (w: Write) => {
 };
 
 describe("schema.sql cobre tudo que o app grava", () => {
-  it("o arquivo tem as 13 tabelas esperadas", () => {
-    expect([...tables.keys()].sort()).toEqual(["answers", "api_usage", "fixtures_cache", "matches", "predictions", "push_subs", "questions", "rate_limits", "rounds", "settings", "standings", "team_cache", "users"]);
+  it("o arquivo tem as 17 tabelas esperadas", () => {
+    expect([...tables.keys()].sort()).toEqual(["answers", "api_usage", "championships", "comments", "fixtures_cache", "matches", "predictions", "push_subs", "questions", "rate_limits", "reactions", "rounds", "settings", "standings", "suggestions", "team_cache", "users"]);
     expect(tables.get("predictions")).toContain("pick_1x2");
   });
 
@@ -67,6 +67,13 @@ describe("schema.sql cobre tudo que o app grava", () => {
     const q = await json(await call("/api/admin/perguntas", "admin", "POST", { date: "2026-10-04", kind: "ufc", title: "Luta principal", closes_at: new Date(Date.now() + 3600_000).toISOString(), options: [{ label: "A", odd: 1.6 }, { label: "B", odd: 2.4 }] }));
     await call(`/api/perguntas/${q.id}/resposta`, "lucas", "PUT", { option_id: "o2" });
     await call(`/api/admin/perguntas/${q.id}/resultado`, "admin", "POST", { option_id: "o2" });
+    // social e campeonatos: pedido, sugestão, comentário, reação, campeonato
+    const ped = await json(await call("/api/pedidos", "lucas"));
+    if (ped.jogos[0]) await call("/api/pedidos/voto", "lucas", "POST", { fixture_id: ped.jogos[0].id });
+    await call("/api/pedidos/sugestao", "lucas", "POST", { texto: "Coloquem o Fla-Flu" });
+    await call("/api/jogos/900202/comentarios", "lucas", "POST", { texto: "Vai dar empate" });
+    await call("/api/palpites/900202_ana/reacao", "lucas", "POST", { emoji: "🔥" });
+    await call("/api/admin/campeonatos", "admin", "POST", { name: "Copa da Galera", start_date: "2026-09-01", end_date: "2026-12-31", prize: "R$ 100 para o 1º" });
     // configuração (congela os extras dos jogos iniciados) e push
     await call("/api/admin/config", "admin", "PUT", { goalsEnabled: false, oddCap: 120 });
     await call("/api/push/inscrever", "lucas", "POST", { endpoint: "https://push.example/abc", keys: { p256dh: "k", auth: "a" } });
@@ -84,7 +91,7 @@ describe("schema.sql cobre tudo que o app grava", () => {
   });
 
   it("o teste realmente exercitou as tabelas principais", () => {
-    for (const t of ["questions", "answers", "users", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
+    for (const t of ["suggestions", "comments", "reactions", "championships", "questions", "answers", "users", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
       expect(seenColls.has(t), t).toBe(true);
     }
   });

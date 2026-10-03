@@ -1,4 +1,5 @@
 // Ranking (ref. 1: líder em destaque + blocos de números), meus palpites e detalhe do jogo.
+import { toast } from "./util.js";
 import { api, avatar, crest, esc, fmtDate, fmtMonth, fmtWhen, icon, leagueIcon, liveLabel, odd, pts, signed, zebraBlock, zebraLabel } from "./util.js";
 import { state } from "./store.js";
 import { openTeam } from "./team.js";
@@ -10,10 +11,52 @@ const fail = (view, e) => (view.innerHTML = `<div class="page narrow"><div class
 const rankOf = (rows, i) => 1 + rows.filter((r) => r.points > rows[i].points || (r.points === rows[i].points && r.hits > rows[i].hits)).length;
 
 export function renderRanking(view) {
-  const S = { escopo: "geral", id: "", tipo: "pontos", data: null, perRound: null };
+  const S = { escopo: "geral", id: "", tipo: "pontos", data: null, perRound: null, camps: null, camp: null };
   view.innerHTML = `<div class="page narrow"><p class="boot">Carregando ranking…</p></div>`;
 
+  async function loadCamp() {
+    try {
+      S.camps ??= (await api("/campeonatos")).campeonatos;
+      if (!S.camps.length) {
+        S.camp = null;
+        return paintCamp();
+      }
+      if (!S.camps.some((x) => x.id === S.id)) S.id = (S.camps.find((x) => x.situacao === "em andamento") ?? S.camps[0]).id;
+      S.camp = await api(`/campeonatos/${encodeURIComponent(S.id)}/ranking`);
+      paintCamp();
+    } catch (e) {
+      fail(view, e);
+    }
+  }
+
+  function paintCamp() {
+    const tabs = `<div class="tabs" role="tablist">${[["rodada", "Rodada"], ["mes", "Mês"], ["geral", "Geral"], ["camp", "Campeonato"]].map(([k, t]) => `<button role="tab" data-esc="${k}" aria-selected="${S.escopo === k}">${t}</button>`).join("")}</div>`;
+    if (!S.camp) {
+      view.innerHTML = `<div class="page narrow"><h1 class="section-title">Ranking<small>Campeonato</small></h1>${tabs}<div class="card card-pad empty">Nenhum campeonato criado ainda.</div></div>`;
+      return;
+    }
+    const c = S.camp.campeonato;
+    const rows = S.camp.rows;
+    const me = state.user.id;
+    const sit = S.camps.find((x) => x.id === c.id)?.situacao ?? "";
+    view.innerHTML = `<div class="page narrow">
+      <h1 class="section-title">Ranking<small>${esc(c.name)}</small></h1>
+      ${tabs}
+      ${S.camps.length > 1 ? `<div style="margin-bottom:12px"><select data-sel aria-label="Campeonato">${S.camps.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? "selected" : ""}>${esc(x.name)} · ${x.situacao}</option>`).join("")}</select></div>` : ""}
+      <div class="card card-pad" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-family:var(--font-display);font-size:24px">${esc(c.name)}</b><span class="tag ${sit === "em andamento" ? "ok" : ""}">${sit}</span></div>
+        <div class="muted" style="font-size:13px">De ${fmtDate(c.start_date)} a ${fmtDate(c.end_date)} · soma as rodadas e as perguntas do dia desse período</div>
+        ${c.prize ? `<div style="margin-top:10px"><div style="font-size:12px;font-weight:600;color:var(--ink-3)">PREMIAÇÃO</div><div class="prize">${esc(c.prize)}</div></div>` : ""}
+      </div>
+      <div class="card" style="overflow:hidden">${
+        rows.length
+          ? `<table class="table"><thead><tr><th>#</th><th>Participante</th><th class="r">Acertos</th><th class="r">Pontos</th></tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.user_id === me ? "me" : ""} ${rankOf(rows, i) === 1 ? "first" : ""}"><td class="pos">${rankOf(rows, i)}</td><td><span class="who">${avatar(r.nickname)}${esc(r.nickname)}${r.user_id === me ? ' <span class="tag">você</span>' : ""}</span></td><td class="r num">${r.hits}</td><td class="pts-cell">${pts(r.points)}</td></tr>`).join("")}</tbody></table>`
+          : `<div class="empty">Ainda sem pontos neste campeonato.</div>`
+      }</div></div>`;
+  }
+
   async function load() {
+    if (S.escopo === "camp") return loadCamp();
     try {
       S.data = await api(`/ranking?escopo=${S.escopo}&id=${encodeURIComponent(S.id)}`);
       S.id = S.data.id;
@@ -29,7 +72,7 @@ export function renderRanking(view) {
     } catch {
       S.perRound = { rodadas: [], participantes: [] }; // é só um complemento
     }
-    if (S.tipo === "pontos" && S.data) paint();
+    if (S.tipo === "pontos" && S.data && S.escopo !== "camp") paint();
   }
 
   /** Quanto cada participante fez em cada uma das últimas rodadas (melhor de cada rodada em destaque). */
@@ -90,7 +133,7 @@ export function renderRanking(view) {
     const tipoSeg = `<div style="margin-bottom:12px"><div class="seg" role="group" aria-label="Tipo de ranking"><button data-tipo="pontos" aria-pressed="${S.tipo === "pontos"}">Pontos</button><button data-tipo="sequencia" aria-pressed="${S.tipo === "sequencia"}">Sequência de acertos</button></div></div>`;
     view.innerHTML = `<div class="page narrow">
       <h1 class="section-title">Ranking<small>${esc(S.escopo === "mes" ? fmtMonth(S.id) : d.titulo)}</small></h1>
-      <div class="tabs" role="tablist">${[["rodada", "Rodada"], ["mes", "Mês"], ["geral", "Geral"]].map(([k, t]) => `<button role="tab" data-esc="${k}" aria-selected="${S.escopo === k}">${t}</button>`).join("")}</div>
+      <div class="tabs" role="tablist">${[["rodada", "Rodada"], ["mes", "Mês"], ["geral", "Geral"], ["camp", "Campeonato"]].map(([k, t]) => `<button role="tab" data-esc="${k}" aria-selected="${S.escopo === k}">${t}</button>`).join("")}</div>
       ${selector ? `<div style="margin-bottom:12px">${selector}</div>` : ""}
       ${tipoSeg}
       ${S.tipo === "sequencia" ? streakBody : `${
@@ -128,7 +171,7 @@ export function renderRanking(view) {
     const tp = e.target.closest("[data-tipo]");
     if (tp) {
       S.tipo = tp.dataset.tipo;
-      return paint();
+      return S.escopo === "camp" ? paintCamp() : paint();
     }
     const b = e.target.closest("[data-esc]");
     if (b) {
@@ -258,7 +301,7 @@ export async function renderMatch(view, id) {
         ? `<div class="card" style="overflow:hidden">${
             d.palpites.length
               ? `<table class="table"><thead><tr><th>Participante</th><th>Palpite</th><th class="r">Pontos</th></tr></thead><tbody>${d.palpites
-                  .map((p) => `<tr class="${p.user_id === state.user.id ? "me" : ""}"><td><span class="who">${avatar(p.nickname)}${esc(p.nickname)}</span></td><td>${label(p)}</td><td class="pts-cell" style="color:${p.points > 0 ? "var(--hit)" : "var(--muted-2)"}">${p.points == null ? "—" : signed(p.points)}</td></tr>`)
+                  .map((p) => `<tr class="${p.user_id === state.user.id ? "me" : ""}"><td><span class="who">${avatar(p.nickname)}${esc(p.nickname)}</span></td><td>${label(p)}<div class="reacts" data-reacts="${esc(p.id)}" data-own="${p.user_id === state.user.id}"></div></td><td class="pts-cell" style="color:${p.points > 0 ? "var(--hit)" : "var(--muted-2)"}">${p.points == null ? "—" : signed(p.points)}</td></tr>`)
                   .join("")}</tbody></table>`
               : `<div class="empty">Ninguém palpitou neste jogo.</div>`
           }</div>`
@@ -266,4 +309,83 @@ export async function renderMatch(view, id) {
     }
   </div>`;
   view.querySelectorAll("[data-team]").forEach((b) => (b.onclick = () => openTeam(j[b.dataset.team])));
+  view.querySelector(".page").insertAdjacentHTML("beforeend", `<h2 class="section-title">Comentários</h2><div id="social"></div>`);
+  social(view, j.id);
+}
+
+/** Comentários do jogo e reações aos palpites (as reações só existem depois do apito). */
+async function social(view, matchId) {
+  const box = view.querySelector("#social");
+  let s;
+  async function load() {
+    try {
+      s = await api(`/jogos/${encodeURIComponent(matchId)}/social`);
+    } catch (e) {
+      box.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+      return;
+    }
+    paint();
+  }
+  function paint() {
+    view.querySelectorAll("[data-reacts]").forEach((el) => {
+      const mine = s.reacoes[el.dataset.reacts] ?? {};
+      const own = el.dataset.own === "true";
+      el.innerHTML = s.reacoes_possiveis
+        .map((e) => {
+          const r = mine[e];
+          if (own && !r) return "";
+          return `<button class="react" data-emoji="${e}" data-pred="${esc(el.dataset.reacts)}" aria-pressed="${!!r?.meu}" aria-label="Reagir ${e}" ${own ? "disabled" : ""}>${e}${r ? " " + r.n : ""}</button>`;
+        })
+        .join("");
+    });
+    box.innerHTML = `<div class="card" style="overflow:hidden;margin-bottom:12px">${
+      s.comentarios.length
+        ? s.comentarios
+            .map(
+              (c) => `<div class="cmt"><div style="display:flex;justify-content:space-between;gap:8px"><span class="who">${esc(c.nickname)}</span><span class="muted" style="font-size:12px">${fmtWhen(c.created_at)}${c.pode_apagar ? ` · <button class="linkish" data-del-c="${esc(c.id)}">apagar</button>` : ""}</span></div><div style="margin-top:2px;overflow-wrap:anywhere">${esc(c.text)}</div></div>`,
+            )
+            .join("")
+        : `<div class="empty">Ninguém comentou ainda. Comece a resenha!</div>`
+    }</div>
+    <form class="form" data-cform style="display:flex;gap:8px;align-items:flex-end"><label class="f" style="flex-grow:1">Seu comentário<input name="texto" maxlength="280" placeholder="Manda a resenha" autocomplete="off" required></label><button class="btn primary" type="submit">Enviar</button></form>`;
+  }
+  view.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-emoji]");
+    if (b && !b.disabled) {
+      b.disabled = true;
+      try {
+        await api(`/palpites/${encodeURIComponent(b.dataset.pred)}/reacao`, { method: "POST", body: { emoji: b.dataset.emoji } });
+        await load();
+      } catch (err) {
+        toast(err.message, "err");
+        b.disabled = false;
+      }
+    }
+    const d = e.target.closest("[data-del-c]");
+    if (d && confirm("Apagar este comentário?")) {
+      try {
+        await api(`/comentarios/${encodeURIComponent(d.dataset.delC)}`, { method: "DELETE" });
+        await load();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    }
+  });
+  view.addEventListener("submit", async (e) => {
+    if (!e.target.matches("[data-cform]")) return;
+    e.preventDefault();
+    const f = e.target;
+    const btn = f.querySelector("button");
+    btn.disabled = true;
+    try {
+      await api(`/jogos/${encodeURIComponent(matchId)}/comentarios`, { method: "POST", body: { texto: f.texto.value } });
+      f.reset();
+      await load();
+    } catch (err) {
+      toast(err.message, "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  load();
 }

@@ -160,7 +160,7 @@ begin
     op   := x->>'op';
 
     if coll not in ('users', 'rounds', 'matches', 'predictions', 'standings', 'api_usage', 'push_subs',
-                    'settings', 'fixtures_cache', 'team_cache', 'rate_limits', 'questions', 'answers') then
+                    'settings', 'fixtures_cache', 'team_cache', 'rate_limits', 'questions', 'answers', 'suggestions', 'comments', 'reactions', 'championships') then
       raise exception 'coleção inválida: %', coll;
     end if;
     if did is null or did = '' then
@@ -256,6 +256,57 @@ create index if not exists answers_question_idx on answers (question_id);
 create index if not exists answers_date_idx on answers (date);
 create index if not exists answers_user_idx on answers (user_id);
 
+-- Pedidos dos participantes: voto em jogo que querem na rodada, ou sugestão escrita.
+create table if not exists suggestions (
+  id          text primary key,
+  kind        text not null check (kind in ('voto', 'texto')),
+  user_id     text not null,
+  date        text not null,
+  fixture_id  bigint,
+  label       text,
+  text        text,
+  created_at  timestamptz not null default now(),
+  version     bigint not null default 1
+);
+create index if not exists suggestions_kind_idx on suggestions (kind);
+
+-- Comentários em cada jogo e reações aos palpites da galera.
+create table if not exists comments (
+  id          text primary key,
+  match_id    text not null,
+  round_id    text not null,
+  user_id     text not null,
+  text        text not null,
+  created_at  timestamptz not null default now(),
+  version     bigint not null default 1
+);
+create index if not exists comments_match_idx on comments (match_id);
+create index if not exists comments_round_idx on comments (round_id);
+
+create table if not exists reactions (
+  id             text primary key,              -- {palpite}_{usuário}_{emoji}
+  prediction_id  text not null,
+  match_id       text not null,
+  round_id       text not null,
+  user_id        text not null,
+  emoji          text not null,
+  created_at     timestamptz not null default now(),
+  version        bigint not null default 1
+);
+create index if not exists reactions_match_idx on reactions (match_id);
+create index if not exists reactions_round_idx on reactions (round_id);
+
+-- Campeonatos: um período com nome e premiação; o ranking soma as rodadas dentro dele.
+create table if not exists championships (
+  id          text primary key,
+  name        text not null,
+  start_date  text not null,
+  end_date    text not null,
+  prize       text,
+  created_at  timestamptz not null default now(),
+  version     bigint not null default 1
+);
+
 -- Vagas dos limites (cadastro: 2 por minuto; login: 5 tentativas por conta). O cron apaga as antigas.
 create table if not exists rate_limits (
   id          text primary key,
@@ -280,8 +331,12 @@ alter table team_cache     enable row level security;
 alter table rate_limits    enable row level security;
 alter table questions      enable row level security;
 alter table answers        enable row level security;
+alter table suggestions    enable row level security;
+alter table comments       enable row level security;
+alter table reactions      enable row level security;
+alter table championships  enable row level security;
 
-revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache, rate_limits, questions, answers
+revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache, rate_limits, questions, answers, suggestions, comments, reactions, championships
   from anon, authenticated;
 revoke all on function apply_writes(jsonb) from public, anon, authenticated;
 grant execute on function apply_writes(jsonb) to service_role;

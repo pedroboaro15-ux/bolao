@@ -6,6 +6,8 @@ const TABS = [
   ["", "Jogos do dia"],
   ["rodadas", "Rodadas e resultados"],
   ["perguntas", "Perguntas do dia"],
+  ["campeonatos", "Campeonatos"],
+  ["pedidos", "Pedidos"],
   ["usuarios", "Usuários"],
   ["config", "Configurações"],
   ["api", "APIs"],
@@ -26,7 +28,7 @@ export function render(view, parts) {
   </div>`;
   extrasToggles($("#extras-box", view));
   const body = $("#admin-body", view);
-  const pages = { "": daily, rodadas: rounds, perguntas: questions, usuarios: users, config: settings, api: usage };
+  const pages = { "": daily, rodadas: rounds, perguntas: questions, campeonatos: championships, pedidos: requests, usuarios: users, config: settings, api: usage };
   (pages[tab] ?? daily)(body, arg).catch((e) => (body.innerHTML = `<div class="card card-pad"><p class="error">${esc(e.message)}</p></div>`));
 }
 
@@ -181,7 +183,9 @@ async function roundResults(body, id) {
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><h2 style="font-size:28px">${esc(d.rodada.title)}</h2><span class="muted">${fmtDate(d.rodada.date)} · ${STATUS[d.rodada.status]}</span></div>
         <div class="actions" style="margin:0">
           ${d.rodada.status !== "finished" ? `<button class="btn small" data-status="${d.rodada.status === "open" ? "closed" : "open"}">${d.rodada.status === "open" ? "Fechar palpites" : "Reabrir palpites"}</button>` : ""}
-          <button class="btn small" data-recalc>Recalcular pontos</button></div></div>
+          <button class="btn small" data-recalc>Recalcular pontos</button>
+          <button class="btn small" data-fetch-scores>Buscar placares agora</button>
+          <button class="btn small danger" data-del-round>Excluir rodada</button></div></div>
       </div>
       ${d.jogos.map(matchAdmin).join("")}`;
     return d;
@@ -234,6 +238,18 @@ async function roundResults(body, id) {
     const b = e.target.closest("button");
     if (!b) return;
     if (b.matches("[data-status]")) busy(b, async () => (await api(`/admin/rodadas/${encodeURIComponent(id)}`, { method: "PATCH", body: { status: b.dataset.status } }), load()));
+    if (b.matches("[data-fetch-scores]"))
+      busy(b, async () => {
+        const r = await api(`/admin/rodadas/${encodeURIComponent(id)}/placares`, { method: "POST" });
+        toast(r.motivo ?? `${r.atualizados} placar(es) atualizado(s).${r.pendentes?.length ? " Ainda sem resultado: " + r.pendentes.join(", ") : ""}`, r.atualizados ? "ok" : "");
+        await load();
+      });
+    if (b.matches("[data-del-round]") && confirm("Excluir esta rodada? Os jogos, palpites, comentários e pontos dela somem do histórico e dos rankings. Não dá para desfazer."))
+      busy(b, async () => {
+        const r = await api(`/admin/rodadas/${encodeURIComponent(id)}`, { method: "DELETE" });
+        toast(`Rodada excluída (${r.jogos} jogos, ${r.palpites} palpites).`, "ok");
+        go("/admin/rodadas");
+      });
     if (b.matches("[data-recalc]"))
       busy(b, async () => {
         const r = await api(`/admin/rodadas/${encodeURIComponent(id)}/recalcular`, { method: "POST" });
@@ -408,6 +424,93 @@ async function questions(body) {
     if (b.dataset.voidQ && confirm("Anular? Ninguém pontua nela.")) go(`/admin/perguntas/${b.dataset.voidQ}/resultado`, { method: "POST", body: { anular: true } }, "Anulada.");
     if (b.dataset.clearQ) go(`/admin/perguntas/${b.dataset.clearQ}/resultado`, { method: "POST", body: { limpar: true } }, "Resultado retirado.");
     if (b.dataset.delQ && confirm("Excluir esta pergunta e todas as respostas dela?")) go(`/admin/perguntas/${b.dataset.delQ}`, { method: "DELETE" }, "Excluída.");
+  });
+  await load();
+}
+
+// ---------- campeonatos ----------
+
+async function championships(body) {
+  let list = [];
+  let editing = null;
+  async function load() {
+    list = (await api("/campeonatos")).campeonatos;
+    paint();
+  }
+  function paint() {
+    const c = list.find((x) => x.id === editing);
+    const today = bolaoDay();
+    body.innerHTML = `
+      <form class="card card-pad form" data-chform style="margin-bottom:14px">
+        <h3 style="margin:0">${c ? "Editar campeonato" : "Novo campeonato"}</h3>
+        <label class="f">Nome<input name="name" maxlength="60" value="${esc(c?.name ?? "")}" placeholder="Copa da Galera de Outubro" required></label>
+        <div class="cols2"><label class="f">Começa<input name="start_date" type="date" value="${c?.start_date ?? today}" required></label><label class="f">Termina<input name="end_date" type="date" value="${c?.end_date ?? nextDay(today)}" required></label></div>
+        <label class="f">Premiação e regras (aparece no ranking)<textarea name="prize" rows="4" maxlength="600" placeholder="1º lugar: R$ 100 · 2º: R$ 50 · 3º: devolve a inscrição. Desempate: mais acertos.">${esc(c?.prize ?? "")}</textarea></label>
+        <p class="hint" style="margin:0">O ranking do campeonato soma as rodadas e as perguntas do dia entre as duas datas. O ranking geral continua somando tudo.</p>
+        <div class="error" data-err role="alert"></div>
+        <div class="actions" style="margin:0"><button class="btn primary" type="submit">${c ? "Salvar" : "Criar campeonato"}</button>${c ? '<button class="btn" type="button" data-cancel>Cancelar</button>' : ""}</div>
+      </form>
+      ${
+        list.length
+          ? list
+              .map(
+                (x) => `<div class="card card-pad" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:18px">${esc(x.name)}</b><span class="tag">${x.situacao}</span></div>
+                <div class="muted" style="font-size:13px">${fmtDate(x.start_date)} a ${fmtDate(x.end_date)}</div>${x.prize ? `<div class="prize" style="margin-top:6px;font-size:14px">${esc(x.prize)}</div>` : ""}
+                <div class="actions"><button class="btn small" data-edit-ch="${esc(x.id)}">Editar</button><button class="btn small danger" data-del-ch="${esc(x.id)}">Excluir</button></div></div>`,
+              )
+              .join("")
+          : '<div class="card card-pad empty">Nenhum campeonato ainda.</div>'
+      }`;
+  }
+  body.addEventListener("submit", async (e) => {
+    if (!e.target.matches("[data-chform]")) return;
+    e.preventDefault();
+    const f = e.target;
+    const payload = Object.fromEntries(new FormData(f));
+    try {
+      if (editing) await api(`/admin/campeonatos/${editing}`, { method: "PUT", body: payload });
+      else await api("/admin/campeonatos", { method: "POST", body: payload });
+      toast(editing ? "Salvo." : "Campeonato criado!", "ok");
+      editing = null;
+      await load();
+    } catch (err) {
+      $("[data-err]", f).textContent = err.message;
+    }
+  });
+  body.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.matches("[data-cancel]")) return ((editing = null), paint());
+    if (b.dataset.editCh) return ((editing = b.dataset.editCh), paint(), window.scrollTo(0, 0));
+    if (b.dataset.delCh && confirm("Excluir este campeonato? Os pontos continuam no ranking geral."))
+      busy(b, async () => (await api(`/admin/campeonatos/${b.dataset.delCh}`, { method: "DELETE" }), toast("Excluído.", "ok"), await load()));
+  });
+  await load();
+}
+
+// ---------- pedidos: votos em jogos e sugestões ----------
+
+async function requests(body) {
+  async function load() {
+    const d = await api("/admin/pedidos");
+    body.innerHTML = `
+      <p class="muted">Últimos 7 dias. Quando não há rodada no dia, a tela de início mostra os jogos da lista (de hoje e amanhã) para cada um votar, e um campo de sugestão.</p>
+      <h2 class="section-title">Jogos mais pedidos</h2>
+      <div class="card" style="overflow:hidden;margin-bottom:16px">${
+        d.votos.length
+          ? d.votos.map((v) => `<div class="list-row"><div class="grow"><b>${esc(v.label)}</b><div class="muted" style="font-size:12px">${esc(v.quem.join(", "))}</div></div><span class="tag ok">${v.votos} voto${v.votos === 1 ? "" : "s"}</span></div>`).join("")
+          : '<div class="empty">Nenhum voto ainda.</div>'
+      }</div>
+      <h2 class="section-title">Sugestões</h2>
+      <div class="card" style="overflow:hidden">${
+        d.sugestoes.length
+          ? d.sugestoes.map((s) => `<div class="list-row"><div class="grow"><b>${esc(s.nickname)}</b> <span class="muted" style="font-size:12px">${fmtWhen(s.created_at)}</span><div style="overflow-wrap:anywhere">${esc(s.text)}</div></div><button class="btn small" data-del-s="${esc(s.id)}">Apagar</button></div>`).join("")
+          : '<div class="empty">Nenhuma sugestão ainda.</div>'
+      }</div>`;
+  }
+  body.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-s]");
+    if (b) busy(b, async () => (await api(`/admin/pedidos/${b.dataset.delS}`, { method: "DELETE" }), await load()));
   });
   await load();
 }

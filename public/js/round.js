@@ -3,6 +3,7 @@ import { api, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, liveLabe
 import { go, state } from "./store.js";
 import { openTeam } from "./team.js";
 import { mountQuestions } from "./questions.js";
+import { renderPedidos } from "./pedidos.js";
 
 let S = null;
 
@@ -122,7 +123,7 @@ function handle(e) {
     S.collapsed.has(k) ? S.collapsed.delete(k) : S.collapsed.add(k);
     return paint();
   }
-  if (act === "round") return go(t.dataset.v === S.data.atual ? "/" : `/rodada/${t.dataset.v}`);
+  if (act === "round") return go(!t.dataset.v || t.dataset.v === S.data.atual ? "/" : `/rodada/${t.dataset.v}`);
   if (act === "team") {
     const [id, ...rest] = t.dataset.v.split("|");
     const team = m ? (m.home.id === Number(id) ? m.home : m.away) : { id: Number(id), name: rest.join("|") };
@@ -236,8 +237,16 @@ function paint() {
   const y = window.scrollY;
   const d = S.data;
   if (!d.rodada) {
-    S.view.innerHTML = `<div class="page narrow"><div id="perguntas-slot"></div><div class="card card-pad empty"><h2>Nenhuma rodada por aqui ainda</h2><p>Assim que o administrador abrir a próxima rodada, os jogos aparecem aqui.</p></div></div>`;
-    mountQuestions(S.view.querySelector("#perguntas-slot"), todayBolao());
+    if (S.pedidosOn) return; // já desenhado: não refaz (perderia o que a pessoa digitou)
+    S.pedidosOn = true;
+    S.view.innerHTML = `<div class="page narrow">
+      <h1 class="section-title">Sem rodada hoje<small>${fmtDate(d.hoje ?? todayBolao())}</small></h1>
+      ${d.outras?.length ? `<div class="chips" aria-label="Rodadas anteriores">${d.outras.map((x) => `<button class="chip" data-act="round" data-v="${esc(x.id)}">${esc(x.title)} · encerrada</button>`).join("")}</div>` : ""}
+      <div id="perguntas-slot"></div>
+      <h2 class="section-title">O que você quer no próximo bolão?</h2>
+      <div id="pedidos-box"></div></div>`;
+    mountQuestions(S.view.querySelector("#perguntas-slot"), d.hoje ?? todayBolao());
+    renderPedidos(S.view.querySelector("#pedidos-box"));
     return;
   }
   const leagues = new Map();
@@ -279,7 +288,7 @@ function paint() {
 
       <section>
         <h1 class="section-title">${esc(d.rodada.title)}<small>${fmtDate(d.rodada.date)} · ${statusText(d.rodada.status)}</small></h1>
-        ${d.atual && d.rodada.id !== d.atual ? `<div class="notice" style="margin-bottom:12px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span>Você está vendo uma rodada anterior.</span><button class="btn small primary" data-act="round" data-v="${esc(d.atual)}">Voltar para a rodada atual</button></div>` : ""}
+        ${d.rodada.id !== d.atual ? `<div class="notice" style="margin-bottom:12px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span>Você está vendo uma rodada anterior (encerrada).</span><button class="btn small primary" data-act="round" data-v="${esc(d.atual ?? "")}">${d.atual ? "Voltar para a rodada de hoje" : "Voltar para o início"}</button></div>` : ""}
         ${d.outras?.length > 1 ? `<div class="chips mobile-only" aria-label="Rodadas">${d.outras.map((r) => `<button class="chip" data-act="round" data-v="${esc(r.id)}" aria-pressed="${r.id === d.rodada.id}">${esc(r.title)}${r.id === d.atual ? " · atual" : ""}</button>`).join("")}</div>` : ""}
         <div class="chips mobile-only" aria-label="Campeonatos">
           <button class="chip" data-act="league" data-v="all" aria-pressed="${S.league === "all"}">Todos</button>
@@ -351,7 +360,7 @@ function matchCard(m) {
   const scored = m.settled && !m.voided;
   const real = scored ? outcome(m.home_goals, m.away_goals) : null;
   const realOu = scored ? (m.home_goals + m.away_goals > 2.5 ? "over" : "under") : null;
-  const badge = m.voided ? `<span class="badge end">Anulado</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? `<span class="badge live">${m.live ? esc(liveLabel(m.live)) : "Em andamento"}</span>` : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
+  const badge = m.voided ? `<span class="badge end">Anulado</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? (m.live ? `<span class="badge live">${esc(liveLabel(m.live))}</span>` : now() - Date.parse(m.kickoff_utc) > 150 * 60_000 ? `<span class="badge end">Aguardando resultado</span>` : `<span class="badge live">Em andamento</span>`) : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
   const top = `<div class="ev-top"><span>${fmtWhen(m.kickoff_utc)}</span>${badge}</div>`;
   const teams = `<div class="teams">${teamRow(m, "h", scored)}${teamRow(m, "a", scored)}</div>`;
   const cur = locked ? mine : d;
