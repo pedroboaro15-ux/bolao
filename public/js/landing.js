@@ -20,7 +20,7 @@ export function renderLanding(view) {
   view.innerHTML = `
   <div class="hs">
     <header class="hs-bar">
-      <a class="brand" data-link href="/"><img src="/icons/ball-64.png" alt="" width="26" height="26">BOLÃO</a>
+      <a class="brand" data-link href="/"><img src="/icons/soccerball.svg" alt="" width="26" height="26">BOLÃO</a>
       <span style="flex:1"></span>
       <a class="hs-enter" data-link href="/entrar">Entrar</a>
     </header>
@@ -30,12 +30,18 @@ export function renderLanding(view) {
       <div class="hs-kicker">Bolão entre amigos · de graça</div>
       <h1>Palpite nos jogos do dia e prove no ranking.</h1>
       <p>Quem entende mais de futebol? Escolha quem ganha, cada acerto vale o lucro da odd, e o ranking não deixa ninguém mentir.</p>
+      <div class="hs-score" aria-label="Exemplo: Grêmio 10 x 0 Inter, final">
+        <span class="hs-sc-t"><i style="background:#0d80bf"></i>Grêmio</span>
+        <b>10</b><img src="/icons/soccerball.svg" alt="" width="34" height="34"><b>0</b>
+        <span class="hs-sc-t">Inter<i style="background:#e30613"></i></span>
+        <small>Final · exemplo</small>
+      </div>
     </section>
 
     <div class="hs-body">
       <div class="summary hs-sum">
         <div><small>Jogos por dia</small><b>4 a 10</b></div>
-        <div><small>Palpite até</small><b>o apito</b></div>
+        <div><small>Palpite</small><b>antes da bola rolar</b></div>
         <div><small>Custa</small><b>R$ 0</b></div>
       </div>
 

@@ -107,7 +107,7 @@ function shell(path) {
   const dark = document.documentElement.dataset.tema === "dark" || (!document.documentElement.dataset.tema && matchMedia("(prefers-color-scheme: dark)").matches);
   app.innerHTML = `
     <header class="topbar"><div class="topbar-in">
-      <a class="brand" data-link href="/"><img src="/icons/ball-64.png" alt="" width="26" height="26">BOLÃO</a>
+      <a class="brand" data-link href="/"><img src="/icons/soccerball.svg" alt="" width="26" height="26">BOLÃO</a>
       <nav class="nav" aria-label="Principal">${items.map(([h, t]) => `<a data-link href="${h}" ${isCurrent(h, path) ? 'aria-current="page"' : ""}>${t}</a>`).join("")}</nav>
       <span class="spacer"></span>
       <button class="iconbtn" data-act="push" aria-label="Notificações" title="Notificações">${icon("bell")}</button>
@@ -306,7 +306,7 @@ function wirePasswordEyes(root) {
 }
 
 function authFrame(inner) {
-  return `<div class="auth"><div class="logo"><img src="/icons/ball-64.png" alt="" width="40" height="40">BOLÃO</div>${inner}</div>`;
+  return `<div class="auth"><div class="logo"><img src="/icons/soccerball.svg" alt="" width="40" height="40">BOLÃO</div>${inner}</div>`;
 }
 
 function loginPage(view) {
