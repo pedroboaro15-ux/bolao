@@ -5,12 +5,10 @@ export interface Settings {
   winnerMultiplier: number;
   ouMultiplier: number;
   csMultiplier: number;
-  jokerEnabled: boolean;
   /** Extra "mais/menos de 2,5 gols" disponível para palpite. O admin liga/desliga a qualquer momento. */
   goalsEnabled: boolean;
   /** Extra "placar exato" disponível para palpite. */
   scoreEnabled: boolean;
-  jokerMultiplier: number;
   /** Teto para qualquer odd justa (placar exato costuma ser enorme). */
   oddCap: number;
   /** Peso de relevância por id de liga da API-Football. */
@@ -34,10 +32,8 @@ export const DEFAULT_SETTINGS: Settings = {
   winnerMultiplier: 1,
   ouMultiplier: 1,
   csMultiplier: 1,
-  jokerEnabled: true,
   goalsEnabled: true,
   scoreEnabled: true,
-  jokerMultiplier: 2,
   oddCap: 150,
   leagueWeights: {
     // 100: Copa do Mundo, Euro, Copa América, Champions, Libertadores
@@ -77,7 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const NUMERIC: (keyof Settings)[] = [
-  "winnerMultiplier", "ouMultiplier", "csMultiplier", "jokerMultiplier", "oddCap", "defaultLeagueWeight",
+  "winnerMultiplier", "ouMultiplier", "csMultiplier", "oddCap", "defaultLeagueWeight",
   "bigTeamBonus", "derbyBonus", "maxMatchesPerDay", "apiFootballDailyLimit", "apiReserve", "oddsWindowHours", "oddsRefreshHours",
 ];
 
@@ -100,7 +96,6 @@ export function parseSettingsPatch(input: any): Partial<Settings> {
   if (out.maxMatchesPerDay !== undefined && (!Number.isInteger(out.maxMatchesPerDay) || out.maxMatchesPerDay < 1 || out.maxMatchesPerDay > 30)) {
     throw badRequest("O limite de jogos por dia deve ser um número inteiro de 1 a 30");
   }
-  if (input.jokerEnabled !== undefined) out.jokerEnabled = Boolean(input.jokerEnabled);
   if (input.goalsEnabled !== undefined) out.goalsEnabled = Boolean(input.goalsEnabled);
   if (input.scoreEnabled !== undefined) out.scoreEnabled = Boolean(input.scoreEnabled);
   if (input.leagueWeights !== undefined) {

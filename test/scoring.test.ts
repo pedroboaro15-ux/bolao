@@ -49,13 +49,8 @@ describe("pontuação", () => {
     expect(scorePrediction(pick, { home: 0, away: 0 }, odds, cfg).points).toBe(0);
   });
 
-  it("coringa dobra o total do jogo", () => {
+  it("coringa foi excluído: um palpite antigo marcado como coringa vale o normal", () => {
     const r = scorePrediction({ ...base, joker: true }, { home: 2, away: 1 }, odds, cfg);
-    expect(r.points).toBe(3.54);
-  });
-
-  it("coringa desligado não multiplica", () => {
-    const r = scorePrediction({ ...base, joker: true }, { home: 2, away: 1 }, odds, { ...cfg, jokerEnabled: false });
     expect(r.points).toBe(1.77);
   });
 

@@ -48,12 +48,14 @@ describe("atualização do placar ao vivo", () => {
     return { urls, repo, api, match };
   };
 
-  it("uma chamada só para todos os jogos da rodada e grava placar, minuto e status", async () => {
+  it("uma chamada por jogo em andamento (o plano grátis recusa ids) e grava placar, minuto e status", async () => {
     const { urls, repo, api, match } = setup([fixture(11, 2, 1, "2H", 63), fixture(12, 0, 0, "HT", 45)]);
     const n = await refreshLive(repo, api, "r1", [match("m1", 11, -70), match("m2", 12, -50), match("m3", 13, 30)], now);
     expect(n).toBe(2);
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain("ids=11-12"); // o jogo que ainda não começou não entra
+    expect(urls).toHaveLength(2); // o jogo que ainda não começou não entra
+    expect(urls[0]).toContain("id=11");
+    expect(urls[1]).toContain("id=12");
+    expect(urls.join()).not.toContain("ids=");
     const m1: any = (await repo.db.get("matches/m1"))!.data;
     expect(m1.live).toMatchObject({ home: 2, away: 1, status: "2H", elapsed: 63 });
     expect(m1.status).toBe("2H");

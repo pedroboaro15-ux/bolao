@@ -137,6 +137,12 @@ export function buildOdds(markets: RawMarkets, now: Date, cap = 150): OddsMap | 
   out.CS = mk(markets.CS, []);
   for (const k of Object.keys(out) as (keyof OddsMap)[]) if (out[k] === undefined) delete out[k];
   if (out["1X2"]) out.model = fitPoisson(out["1X2"].fair, out.OU25?.fair);
+  // Fonte sem Mais/Menos 2,5 (ex.: The Odds API só com 1X2): odd justa do modelo, sem margem.
+  if (out.model && !out.OU25) {
+    const p = outcomeProbs(out.model.lh, out.model.la).over25;
+    const r = (x: number) => Math.round(Math.min(cap, 1 / x) * 100) / 100;
+    if (p > 0 && p < 1) out.OU25 = { source: "modelo", fetched_at: now, raw: {}, fair: { over: r(p), under: r(1 - p) } };
+  }
   return Object.keys(out).length ? out : null;
 }
 

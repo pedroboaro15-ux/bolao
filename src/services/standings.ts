@@ -1,12 +1,11 @@
 import type { Pick1x2, Prediction, StandingRow, Standings } from "../types";
-import { roundSequences, streakRows, type StreakMatch } from "../lib/streaks";
 import { bestZebra, maxZebra, type ZebraMatch, type ZebraPrediction } from "../lib/zebra";
 import type { Repo } from "../db/repo";
 import { round2 } from "../lib/odds";
 
 export function sortRows(rows: StandingRow[]): StandingRow[] {
-  // Desempate: mais acertos; depois ordem alfabética para ficar estável.
-  return [...rows].sort((a, b) => b.points - a.points || b.hits - a.hits || a.nickname.localeCompare(b.nickname, "pt-BR"));
+  // Sem desempate: pontuação igual divide a posição (1º, 1º, 3º). A ordem alfabética só deixa a lista estável.
+  return [...rows].sort((a, b) => b.points - a.points || a.nickname.localeCompare(b.nickname, "pt-BR"));
 }
 
 /** Soma pontos e acertos por participante (uma linha por usuário). */
@@ -38,8 +37,8 @@ export function roundRows(predictions: Pick<Prediction, "user_id" | "points" | "
   return sortRows([...acc.values()]);
 }
 
-/** Jogo com o que os rankings precisam (zebra e sequência). */
-export type StandMatch = ZebraMatch & StreakMatch;
+/** Jogo com o que os rankings precisam (zebra). */
+export type StandMatch = ZebraMatch & { kickoff_utc: Date };
 
 /** Reescreve os rankings da rodada, do mês e o geral (o mês e o geral somam os documentos de rodada). */
 export async function rebuildStandings(
@@ -57,14 +56,9 @@ export async function rebuildStandings(
   const withMatch = predictions.filter((p) => !!p.match_id) as ZebraPrediction[];
   const zebra = bestZebra(withMatch, matches, nick);
   const roundMatches = [...matches.values()];
-  const seq = roundSequences(
-    roundMatches,
-    predictions.filter((p) => p.match_id && p.pick_1x2).map((p) => ({ user_id: p.user_id, match_id: p.match_id!, pick_1x2: p.pick_1x2! })),
-    users,
-  );
   const start = roundMatches.length ? new Date(Math.min(...roundMatches.map((m) => m.kickoff_utc.getTime()))) : now;
   await repo.db.commit([
-    { op: "set", path: `standings/round_${roundId}`, data: { scope: "round", month, rows, zebra, seq, start, streaks: streakRows([{ start, seq }], nick), updated_at: now } satisfies Standings },
+    { op: "set", path: `standings/round_${roundId}`, data: { scope: "round", month, rows, zebra, start, updated_at: now } satisfies Standings },
   ]);
 
   await rebuildTotals(repo, month, nick, now);
@@ -78,12 +72,12 @@ export async function rebuildTotals(repo: Repo, month: string, nick: Map<string,
     {
       op: "set",
       path: `standings/month_${month}`,
-      data: { scope: "month", rows: sumRows(monthRounds.map((r) => r.rows)), zebra: maxZebra(monthRounds.map((r) => r.zebra)), streaks: streakRows(monthRounds, nick), updated_at: now } satisfies Standings,
+      data: { scope: "month", rows: sumRows(monthRounds.map((r) => r.rows)), zebra: maxZebra(monthRounds.map((r) => r.zebra)), updated_at: now } satisfies Standings,
     },
     {
       op: "set",
       path: "standings/all",
-      data: { scope: "all", rows: sumRows(allRounds.map((r) => r.rows)), zebra: maxZebra(allRounds.map((r) => r.zebra)), streaks: streakRows(allRounds, nick), updated_at: now } satisfies Standings,
+      data: { scope: "all", rows: sumRows(allRounds.map((r) => r.rows)), zebra: maxZebra(allRounds.map((r) => r.zebra)), updated_at: now } satisfies Standings,
     },
   ]);
 }

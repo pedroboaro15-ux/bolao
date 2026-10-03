@@ -85,34 +85,13 @@ describe("palpites e trava no kickoff", () => {
     expect(r.erros["900205"]).toMatch(/combina/);
   });
 
-  it("só um coringa por rodada: mover o coringa libera o anterior", async () => {
+  it("coringa foi excluído: o servidor ignora e grava sem coringa", async () => {
     const d = await json(await call("/api/rodada/atual", { user: "carlos" }));
-    const put = (id: string) =>
-      call(`/api/rodadas/${d.rodada.id}/palpites`, { method: "PUT", user: "carlos", body: { palpites: [{ match_id: id, pick_1x2: "1", mode: "ou", pick_ou: "over", joker: true }] } });
-    expect((await json(await put("900204"))).salvos).toEqual(["900204"]);
-    expect((await json(await put("900205"))).salvos).toEqual(["900205"]);
+    const r = await json(await call(`/api/rodadas/${d.rodada.id}/palpites`, { method: "PUT", user: "carlos", body: { palpites: [{ match_id: "900204", pick_1x2: "1", mode: null, joker: true }, { match_id: "900206", pick_1x2: "1", mode: null, joker: true }] } }));
+    expect(r.salvos.sort()).toEqual(["900204", "900206"]);
     const after = await json(await call("/api/rodada/atual", { user: "carlos" }));
-    const jokers = after.jogos.filter((j: any) => j.mine?.joker).map((j: any) => j.id);
-    expect(jokers).toEqual(["900205"]);
-    // dois coringas no mesmo envio é erro
-    const two = await call(`/api/rodadas/${d.rodada.id}/palpites`, {
-      method: "PUT",
-      user: "carlos",
-      body: { palpites: [{ match_id: "900204", pick_1x2: "1", mode: "ou", pick_ou: "over", joker: true }, { match_id: "900206", pick_1x2: "1", mode: "ou", pick_ou: "over", joker: true }] },
-    });
-    expect(two.status).toBe(400);
-  });
-
-  it("coringa que já está em jogo iniciado não pode ser trocado (ana tem coringa no 900202)", async () => {
-    const d = await json(await call("/api/rodada/atual", { user: "ana" }));
-    const r = await json(
-      await call(`/api/rodadas/${d.rodada.id}/palpites`, {
-        method: "PUT",
-        user: "ana",
-        body: { palpites: [{ match_id: "900204", pick_1x2: "1", mode: "ou", pick_ou: "over", joker: true }] },
-      }),
-    );
-    expect(r.erros["900204"]).toMatch(/coringa/i);
+    expect(after.coringa).toBeUndefined();
+    expect(after.jogos.find((j: any) => j.id === "900204").mine).not.toHaveProperty("joker");
   });
 
   it("palpites dos outros só aparecem depois do kickoff", async () => {
@@ -212,10 +191,11 @@ describe("cadastro aberto", () => {
 
 describe("configurações do admin", () => {
   it("salva multiplicadores e valida", async () => {
-    const ok = await json(await call("/api/admin/config", { method: "PUT", user: "admin", body: { jokerMultiplier: 3, oddCap: 120 } }));
-    expect(ok.config.jokerMultiplier).toBe(3);
+    const ok = await json(await call("/api/admin/config", { method: "PUT", user: "admin", body: { winnerMultiplier: 3, oddCap: 120 } }));
+    expect(ok.config.winnerMultiplier).toBe(3);
+    expect(ok.config).not.toHaveProperty("jokerMultiplier");
     expect((await call("/api/admin/config", { method: "PUT", user: "admin", body: { oddCap: -5 } })).status).toBe(400);
-    await call("/api/admin/config", { method: "PUT", user: "admin", body: { jokerMultiplier: 2, oddCap: 150 } });
+    await call("/api/admin/config", { method: "PUT", user: "admin", body: { winnerMultiplier: 1, oddCap: 150 } });
   });
 });
 
@@ -223,5 +203,23 @@ describe("jogos do dia no admin", () => {
   it("só lista jogos que ainda não começaram", async () => {
     const d = await json(await call("/api/admin/jogos-do-dia", { user: "admin" }));
     expect(d.jogos.every((j: any) => Date.parse(j.kickoff) > Date.now())).toBe(true);
+  });
+});
+
+describe("o que é obrigatório em cada rodada", () => {
+  it("rodada com vencedor + gols recusa 'só vencedor' e aceita gols ou placar exato", async () => {
+    const d = await json(await call("/api/rodada/atual", { user: "bia" }));
+    expect(d.rodada.required).toBe("winner");
+    expect((await call(`/api/admin/rodadas/${d.rodada.id}`, { method: "PATCH", user: "admin", body: { required: "qualquer" } })).status).toBe(400);
+    expect((await call(`/api/admin/rodadas/${d.rodada.id}`, { method: "PATCH", user: "admin", body: { required: "winner_goals" } })).status).toBe(200);
+    const put = (p: object) => call(`/api/rodadas/${d.rodada.id}/palpites`, { method: "PUT", user: "bia", body: { palpites: [{ match_id: "900205", pick_1x2: "1", ...p }] } }).then(json);
+    const so = await put({ mode: null });
+    expect(so.salvos).toEqual([]);
+    expect(so.erros["900205"]).toMatch(/obrigat/);
+    expect((await put({ mode: "ou", pick_ou: "under" })).salvos).toEqual(["900205"]);
+    expect((await put({ mode: "cs", home_goals: 2, away_goals: 0 })).salvos).toEqual(["900205"]);
+    expect((await json(await call("/api/rodada/atual", { user: "bia" }))).rodada.required).toBe("winner_goals");
+    await call(`/api/admin/rodadas/${d.rodada.id}`, { method: "PATCH", user: "admin", body: { required: "winner" } });
+    expect((await put({ mode: null })).salvos).toEqual(["900205"]);
   });
 });

@@ -1,9 +1,10 @@
-import type { Env, LeagueRef, Match, Round, TeamRef } from "../types";
+import type { Env, LeagueRef, Match, Round, RoundRequired, TeamRef } from "../types";
 import type { Repo, WithId } from "../db/repo";
 import { ConflictError, type Write } from "../db/types";
 import type { Settings } from "../lib/settings";
 import { badRequest, conflict } from "../lib/errors";
-import { buildOdds } from "../lib/odds";
+import { buildOdds, type RawMarkets } from "../lib/odds";
+import { theOddsApi } from "./oddsapi";
 import { isBrSerie, relevanceScore } from "../lib/relevance";
 import { addDays, bolaoWindow } from "../lib/dates";
 import { ApiFootball, QuotaError } from "./apifootball";
@@ -66,6 +67,7 @@ export interface CreateRoundInput {
   date: string;
   fixtureIds: number[];
   open: boolean;
+  required?: RoundRequired;
 }
 
 /** Quantos jogos já foram escolhidos neste dia do bolão (somando todas as rodadas do dia). */
@@ -117,7 +119,7 @@ export async function createRound(repo: Repo, input: CreateRoundInput, fixtures:
     };
     writes.push({ op: "set", path: `matches/${f.id}`, data: match as any, mustNotExist: true });
   }
-  const round: Round = { title, date: input.date, status: input.open ? "open" : "draft", created_at: now, match_ids: ids.map(String) };
+  const round: Round = { title, date: input.date, status: input.open ? "open" : "draft", created_at: now, match_ids: ids.map(String), required: input.required === "winner_goals" ? "winner_goals" : "winner" };
   writes.push({ op: "set", path: `rounds/${roundId}`, data: round as any, mustNotExist: true });
   try {
     await repo.db.commit(writes);
@@ -131,7 +133,10 @@ export async function createRound(repo: Repo, input: CreateRoundInput, fixtures:
 /** Busca as odds de um jogo e grava o mapa inteiro (bruta + justa + modelo). */
 export async function refreshMatchOdds(repo: Repo, api: ApiFootball, settings: Settings, match: WithId<Match>, opts: { keepReserve?: boolean; spaced?: boolean } = {}) {
   if (match.kickoff_utc <= new Date()) return { ok: false as const, motivo: "O jogo já começou" };
-  const raw = await api.odds(match.api_fixture_id, opts);
+  // The Odds API primeiro (se ODDS_API_KEY estiver configurada e a liga mapeada): poupa a cota da API-Football,
+  // que fica para os placares. Sem resposta dela, usa a API-Football.
+  let raw: RawMarkets = await theOddsApi(api.env, repo, match).catch(() => ({}) as RawMarkets);
+  if (!raw["1X2"]) raw = await api.odds(match.api_fixture_id, opts);
   const built = buildOdds(raw, new Date(), settings.oddCap);
   if (!built || !built["1X2"]) {
     await repo.db.commit([{ op: "merge", path: `matches/${match.id}`, data: { odds_error: "A API não trouxe odds 1X2 para este jogo" } }]);

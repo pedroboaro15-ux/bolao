@@ -32,7 +32,7 @@ async function loadQuestions(date) {
 
 function paint() {
   Q.html = Q.list.length
-    ? `<section class="qday"><h2 class="section-title" style="margin-top:4px">Perguntas do dia<small>${Q.list.length} ${Q.list.length > 1 ? "eventos" : "evento"}</small></h2>${Q.list.map(card).join("")}</section>`
+    ? `<section class="qday"><h2 class="section-title" style="margin-top:4px">Perguntas extras<small>${Q.list.length} ${Q.list.length > 1 ? "eventos" : "evento"}</small></h2>${Q.list.map(card).join("")}</section>`
     : "";
   if (slotRef?.isConnected) slotRef.innerHTML = Q.html;
 }

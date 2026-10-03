@@ -132,13 +132,13 @@ describe("Supabase Auth", () => {
 });
 
 describe("ranking", () => {
-  it("ordena por pontos, depois por acertos", () => {
+  it("ordena só por pontos: acertos não desempatam (empate fica em ordem alfabética)", () => {
     const rows = sortRows([
       { user_id: "a", nickname: "A", points: 3, hits: 1 },
       { user_id: "b", nickname: "B", points: 3, hits: 4 },
       { user_id: "c", nickname: "C", points: 5.5, hits: 0 },
     ]);
-    expect(rows.map((r) => r.user_id)).toEqual(["c", "b", "a"]);
+    expect(rows.map((r) => r.user_id)).toEqual(["c", "a", "b"]);
   });
 
   it("soma rodadas e ignora jogos sem resultado", () => {

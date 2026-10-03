@@ -5,7 +5,7 @@ import { state, go } from "./store.js";
 const TABS = [
   ["", "Jogos do dia"],
   ["rodadas", "Rodadas e resultados"],
-  ["perguntas", "Perguntas do dia"],
+  ["perguntas", "Perguntas extras"],
   ["campeonatos", "Campeonatos"],
   ["pedidos", "Pedidos"],
   ["usuarios", "Usuários"],
@@ -113,6 +113,7 @@ async function daily(body) {
       </div>
       <div class="card card-pad form" style="margin-top:14px;position:sticky;bottom:78px;z-index:5">
         <label class="f">Nome da rodada<input data-title value="${esc(S.title)}" placeholder="Rodada de ${fmtDate(S.date)}" maxlength="80"></label>
+        <label class="f">O que é obrigatório em cada jogo<select data-required><option value="winner" ${S.required !== "winner_goals" ? "selected" : ""}>Só o vencedor (gols e placar são extras opcionais)</option><option value="winner_goals" ${S.required === "winner_goals" ? "selected" : ""}>Vencedor + gols (mais/menos de 2,5 ou placar exato)</option></select></label>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span><b class="num" style="font-size:22px" data-count>${n}</b> <span data-count-label>escolhido${n === 1 ? "" : "s"}</span> <span class="muted">(restam ${restam} de ${d.limite} neste dia)</span></span>
         <button class="btn primary" data-create ${ok ? "" : "disabled"}>Criar e abrir rodada</button></div>
       </div>`;
@@ -144,6 +145,7 @@ async function daily(body) {
   });
   body.addEventListener("input", (e) => {
     if (e.target.matches("[data-title]")) S.title = e.target.value;
+    if (e.target.matches("[data-required]")) S.required = e.target.value;
   });
   body.addEventListener("click", (e) => {
     const r = e.target.closest("[data-refresh]");
@@ -151,7 +153,7 @@ async function daily(body) {
     const c = e.target.closest("[data-create]");
     if (c)
       busy(c, async () => {
-        const res = await api("/admin/rodadas", { method: "POST", body: { date: S.date, title: S.title || `Rodada de ${fmtDate(S.date)}`, fixtureIds: [...S.picked], open: true } });
+        const res = await api("/admin/rodadas", { method: "POST", body: { date: S.date, title: S.title || `Rodada de ${fmtDate(S.date)}`, fixtureIds: [...S.picked], open: true, required: S.required ?? "winner" } });
         toast("Rodada criada e aberta! Buscando as odds jogo a jogo…", "ok");
         try {
           sessionStorage.setItem("bolao-buscar-odds", res.id);
@@ -183,6 +185,7 @@ async function roundResults(body, id) {
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><h2 style="font-size:28px">${esc(d.rodada.title)}</h2><span class="muted">${fmtDate(d.rodada.date)} · ${STATUS[d.rodada.status]}</span></div>
         <div class="actions" style="margin:0">
           ${d.rodada.status !== "finished" ? `<button class="btn small" data-status="${d.rodada.status === "open" ? "closed" : "open"}">${d.rodada.status === "open" ? "Fechar palpites" : "Reabrir palpites"}</button>` : ""}
+          <label class="f" style="min-width:220px">Obrigatório<select data-req><option value="winner" ${d.rodada.required !== "winner_goals" ? "selected" : ""}>Só o vencedor</option><option value="winner_goals" ${d.rodada.required === "winner_goals" ? "selected" : ""}>Vencedor + gols</option></select></label>
           <button class="btn small" data-recalc>Recalcular pontos</button>
           <button class="btn small" data-fetch-scores>Buscar placares agora</button>
           <button class="btn small danger" data-del-round>Excluir rodada</button></div></div>
@@ -195,13 +198,13 @@ async function roundResults(body, id) {
     const started = Date.parse(m.kickoff_utc) <= Date.now();
     const calledOff = ["PST", "CANC", "ABD", "SUSP"].includes(m.status);
     return `<div class="card card-pad" style="margin-bottom:12px" data-m="${esc(m.id)}">
-      <div class="m-head"><span>${fmtWhen(m.kickoff_utc)}</span><span>${esc(m.league.name)}</span><span class="tag">API: ${esc(m.status)}</span>${m.voided ? '<span class="tag">Anulado</span>' : ""}${m.manual_override ? '<span class="tag joker">Manual</span>' : ""}${calledOff && !m.voided ? '<span class="tag live">Adiado/cancelado? Anule</span>' : ""}<span class="tag">${m.palpites} palpite${m.palpites === 1 ? "" : "s"}</span></div>
+      <div class="m-head"><span>${fmtWhen(m.kickoff_utc)}</span><span>${esc(m.league.name)}</span><span class="tag">API: ${esc(m.status)}</span>${m.voided ? '<span class="tag">Excluído</span>' : ""}${m.manual_override ? '<span class="tag joker">Manual</span>' : ""}${calledOff && !m.voided ? '<span class="tag live">Adiado/cancelado? Anule</span>' : ""}<span class="tag">${m.palpites} palpite${m.palpites === 1 ? "" : "s"}</span></div>
       <div class="res-grid"><b style="text-align:right;font-family:var(--font-display);font-size:20px">${esc(m.home.name)}</b>
         <span style="display:flex;gap:6px;align-items:center"><input inputmode="numeric" data-h value="${m.home_goals ?? ""}" aria-label="Gols ${esc(m.home.name)}"><span>x</span><input inputmode="numeric" data-a value="${m.away_goals ?? ""}" aria-label="Gols ${esc(m.away.name)}"></span>
         <b style="font-family:var(--font-display);font-size:20px">${esc(m.away.name)}</b></div>
       <div class="actions"><button class="btn small primary" data-save-result>Salvar resultado</button>
         ${m.manual_override ? `<button class="btn small" data-clear-result>Voltar ao automático</button>` : ""}
-        <button class="btn small ${m.voided ? "" : "danger"}" data-void="${m.voided ? "0" : "1"}">${m.voided ? "Desfazer anulação" : "Anular jogo"}</button></div>
+        <button class="btn small ${m.voided ? "" : "danger"}" data-void="${m.voided ? "0" : "1"}">${m.voided ? "Voltar o jogo para a rodada" : "Excluir da rodada (adiado ou cancelado)"}</button></div>
       <div class="notice" style="margin-top:12px;font-size:13px">
         ${m.odds ? `Odds (${esc(m.odds.fonte)}): 1 <b>${odd(m.odds.justa["1"])}</b> · X <b>${odd(m.odds.justa.X)}</b> · 2 <b>${odd(m.odds.justa["2"])}</b>${m.odds.ou ? ` · Mais/Menos 2,5 <b>${odd(m.odds.ou.over)}</b>/<b>${odd(m.odds.ou.under)}</b>` : ""} · ${m.congeladas ? "congeladas" : "ao vivo"}` : `<span class="error">Sem odds.</span> ${esc(m.odds_error ?? "")}`}
         ${!started ? `<div class="actions"><button class="btn small" data-fetch-odds>Buscar odds na API</button><button class="btn small" data-manual-odds>Digitar odds</button></div>` : `<div class="actions"><button class="btn small" data-manual-odds>Digitar odds</button></div>`}
@@ -231,6 +234,16 @@ async function roundResults(body, id) {
     filling = false;
     if (todo.length) toast(ok === todo.length ? "Odds prontas!" : `Odds de ${ok} de ${todo.length} jogos. ${lastError}`, ok === todo.length ? "ok" : "err");
   }
+
+  body.addEventListener("change", async (e) => {
+    if (!e.target.matches("[data-req]")) return;
+    try {
+      await api(`/admin/rodadas/${encodeURIComponent(id)}`, { method: "PATCH", body: { required: e.target.value } });
+      toast("Salvo. Vale para os palpites feitos a partir de agora.", "ok");
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
 
   body.addEventListener("click", (e) => {
     const card = e.target.closest("[data-m]");
@@ -268,7 +281,7 @@ async function roundResults(body, id) {
     if (b.matches("[data-clear-result]")) busy(b, async () => (await api(`/admin/jogos/${mid}/resultado`, { method: "PUT", body: { limpar: true } }), load()));
     if (b.matches("[data-void]"))
       busy(b, async () => {
-        if (b.dataset.void === "1" && !confirm("Anular este jogo? Ninguém pontua nele.")) return;
+        if (b.dataset.void === "1" && !confirm("Excluir este jogo da rodada (adiado ou cancelado)? Ninguém pontua nele.")) return;
         await api(`/admin/jogos/${mid}/anular`, { method: "POST", body: { anular: b.dataset.void === "1" } });
         await load();
       });
@@ -437,12 +450,24 @@ async function questions(body) {
 
 // ---------- campeonatos ----------
 
+const FORMATOS = { "": "Ranking de pontos (soma do período)", pontos: "Pontos corridos (todos contra todos)", grupos: "Grupos", mata: "Mata-mata", copa: "Copa (grupos + mata-mata)" };
+
 async function championships(body) {
   let list = [];
+  let people = [];
   let editing = null;
   async function load() {
-    list = (await api("/campeonatos")).campeonatos;
+    const [c, u] = await Promise.all([api("/campeonatos"), api("/admin/usuarios")]);
+    list = c.campeonatos;
+    people = u.usuarios;
     paint();
+  }
+  /** Campos do confronto: aparecem só quando o formato não é o ranking de pontos. */
+  function syncFormat(f) {
+    const fmt = f.format.value;
+    f.querySelector("[data-conf]").hidden = !fmt;
+    f.querySelector("[data-groups]").hidden = !(fmt === "grupos" || fmt === "copa");
+    f.querySelector("[data-advance]").hidden = fmt !== "copa";
   }
   function paint() {
     const c = list.find((x) => x.id === editing);
@@ -452,8 +477,21 @@ async function championships(body) {
         <h3 style="margin:0">${c ? "Editar campeonato" : "Novo campeonato"}</h3>
         <label class="f">Nome<input name="name" maxlength="60" value="${esc(c?.name ?? "")}" placeholder="Copa da Galera de Outubro" required></label>
         <div class="cols2"><label class="f">Começa<input name="start_date" type="date" value="${c?.start_date ?? today}" required></label><label class="f">Termina<input name="end_date" type="date" value="${c?.end_date ?? nextDay(today)}" required></label></div>
-        <label class="f">Premiação e regras (aparece no ranking)<textarea name="prize" rows="4" maxlength="600" placeholder="1º lugar: R$ 100 · 2º: R$ 50 · 3º: devolve a inscrição. Desempate: mais acertos.">${esc(c?.prize ?? "")}</textarea></label>
-        <p class="hint" style="margin:0">O ranking do campeonato soma as rodadas e as perguntas do dia entre as duas datas. O ranking geral continua somando tudo.</p>
+        <label class="f">Formato<select name="format">${Object.entries(FORMATOS).map(([k, t]) => `<option value="${k}" ${(c?.format ?? "") === k ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <div data-conf ${c?.format ? "" : "hidden"} class="form" style="gap:12px">
+          <div class="cols2"><label class="f">Jogos<select name="legs"><option value="1" ${c?.legs !== 2 ? "selected" : ""}>Só ida</option><option value="2" ${c?.legs === 2 ? "selected" : ""}>Ida e volta</option></select></label>
+            <label class="f">Quantos pontos de lucro valem 1 gol<input name="goal_step" inputmode="decimal" value="${c?.goal_step ?? 1}"></label></div>
+          <div class="cols2"><label class="f" data-groups ${c?.format === "grupos" || c?.format === "copa" ? "" : "hidden"}>Quantos grupos<input name="groups" type="number" min="1" max="8" value="${c?.groups ?? 2}"></label>
+            <label class="f" data-advance ${c?.format === "copa" ? "" : "hidden"}>Passam de cada grupo<input name="advance" type="number" min="1" max="4" value="${c?.advance ?? 2}"></label></div>
+          <fieldset class="card card-pad" style="border:1px solid var(--line)"><legend style="font-weight:600;padding:0 6px">Participantes (a ordem de marcação é a cabeça de chave)</legend>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${people
+              .map((u) => `<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" name="participants" value="${esc(u.id)}" style="width:auto" ${c?.participants ? (c.participants.includes(u.id) ? "checked" : "") : "checked"}> ${esc(u.nickname)}</label>`)
+              .join("")}</div></fieldset>
+          <p class="hint" style="margin:0">Cada dia com rodada dentro do período vira uma rodada do campeonato. O lucro do dia de cada um vira gols no confronto (ex.: 1 ponto = 1 gol; lucro 2,97 = 2 gols). Vitória 3, empate 1. Empate no mata-mata: passa quem teve mais acertos (provisório, até definirmos os pênaltis).</p>
+        </div>
+        <label class="f">Competição paga? Valor por pessoa (opcional, combinado entre vocês)<input name="fee" maxlength="60" value="${esc(c?.fee ?? "")}" placeholder="Ex.: R$ 20 por pessoa (deixe em branco se for de graça)"></label>
+        <label class="f">Premiação e regras (aparece no ranking)<textarea name="prize" rows="4" maxlength="600" placeholder="1º lugar: R$ 100 · 2º: R$ 50 · 3º: devolve a inscrição.">${esc(c?.prize ?? "")}</textarea></label>
+        <p class="hint" style="margin:0">Sem formato de confronto, o campeonato é um ranking que soma as rodadas e as perguntas extras entre as duas datas. O ranking geral continua somando tudo.</p>
         <div class="error" data-err role="alert"></div>
         <div class="actions" style="margin:0"><button class="btn primary" type="submit">${c ? "Salvar" : "Criar campeonato"}</button>${c ? '<button class="btn" type="button" data-cancel>Cancelar</button>' : ""}</div>
       </form>
@@ -462,7 +500,7 @@ async function championships(body) {
           ? list
               .map(
                 (x) => `<div class="card card-pad" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:18px">${esc(x.name)}</b><span class="tag">${x.situacao}</span></div>
-                <div class="muted" style="font-size:13px">${fmtDate(x.start_date)} a ${fmtDate(x.end_date)}</div>${x.prize ? `<div class="prize" style="margin-top:6px;font-size:14px">${esc(x.prize)}</div>` : ""}
+                <div class="muted" style="font-size:13px">${FORMATOS[x.format ?? ""]}${x.format ? ` · ${x.legs === 2 ? "ida e volta" : "só ida"} · ${x.participants?.length ?? 0} participantes` : ""} · ${fmtDate(x.start_date)} a ${fmtDate(x.end_date)}${x.fee ? ` · paga: ${esc(x.fee)}` : " · gratuita"}</div>${x.prize ? `<div class="prize" style="margin-top:6px;font-size:14px">${esc(x.prize)}</div>` : ""}
                 <div class="actions"><button class="btn small" data-edit-ch="${esc(x.id)}">Editar</button><button class="btn small danger" data-del-ch="${esc(x.id)}">Excluir</button></div></div>`,
               )
               .join("")
@@ -473,7 +511,9 @@ async function championships(body) {
     if (!e.target.matches("[data-chform]")) return;
     e.preventDefault();
     const f = e.target;
-    const payload = Object.fromEntries(new FormData(f));
+    const fd = new FormData(f);
+    const payload = Object.fromEntries(fd);
+    payload.participants = fd.getAll("participants");
     try {
       if (editing) await api(`/admin/campeonatos/${editing}`, { method: "PUT", body: payload });
       else await api("/admin/campeonatos", { method: "POST", body: payload });
@@ -483,6 +523,9 @@ async function championships(body) {
     } catch (err) {
       $("[data-err]", f).textContent = err.message;
     }
+  });
+  body.addEventListener("change", (e) => {
+    if (e.target.matches("[data-chform] select[name=format]")) syncFormat(e.target.form);
   });
   body.addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -591,8 +634,6 @@ async function settings(body) {
       <label class="f">Limite de jogos escolhidos por dia (dia = 06:00 às 06:00 em São Paulo)<input name="maxMatchesPerDay" inputmode="numeric" value="${c.maxMatchesPerDay}"></label>
       <label class="f" style="grid-template-columns:auto 1fr;align-items:center;gap:10px"><input type="checkbox" name="goalsEnabled" ${c.goalsEnabled ? "checked" : ""}> Extra de gols (mais/menos de 2,5) à disposição</label>
       <label class="f" style="grid-template-columns:auto 1fr;align-items:center;gap:10px"><input type="checkbox" name="scoreEnabled" ${c.scoreEnabled ? "checked" : ""}> Extra de placar exato à disposição</label>
-      <label class="f" style="grid-template-columns:auto 1fr;align-items:center;gap:10px"><input type="checkbox" name="jokerEnabled" ${c.jokerEnabled ? "checked" : ""}> Coringa ligado (1 jogo por rodada)</label>
-      <label class="f">Multiplicador do coringa<input name="jokerMultiplier" inputmode="decimal" value="${c.jokerMultiplier}"></label>
       <div class="notice">Mudanças valem para os próximos cálculos. Para aplicar em uma rodada já pontuada, use “Recalcular pontos” nela.</div>
     </div>
     <div class="card card-pad form"><h3 style="font-size:22px">Relevância dos jogos</h3>
@@ -617,13 +658,12 @@ async function settings(body) {
       else if (line.trim()) return toast(`Linha inválida nos pesos: “${line.trim()}”`, "err");
     }
     const patch = {
-      jokerEnabled: f.get("jokerEnabled") === "on",
       goalsEnabled: f.get("goalsEnabled") === "on",
       scoreEnabled: f.get("scoreEnabled") === "on",
       leagueWeights: lw,
       bigTeams: String(f.get("bigTeams")).split("\n").map((s) => s.trim()).filter(Boolean),
     };
-    for (const k of ["winnerMultiplier", "ouMultiplier", "csMultiplier", "oddCap", "jokerMultiplier", "maxMatchesPerDay", "defaultLeagueWeight", "bigTeamBonus", "derbyBonus", "apiFootballDailyLimit", "apiReserve", "oddsWindowHours", "oddsRefreshHours"]) patch[k] = num(k);
+    for (const k of ["winnerMultiplier", "ouMultiplier", "csMultiplier", "oddCap", "maxMatchesPerDay", "defaultLeagueWeight", "bigTeamBonus", "derbyBonus", "apiFootballDailyLimit", "apiReserve", "oddsWindowHours", "oddsRefreshHours"]) patch[k] = num(k);
     try {
       await api("/admin/config", { method: "PUT", body: patch });
       toast("Configurações salvas.", "ok");
@@ -652,6 +692,7 @@ async function usage(body) {
       <button class="btn primary" data-test>Testar API-Football</button>
       <pre id="test-out" class="mono" style="white-space:pre-wrap;margin-top:12px"></pre>
     </div>
+    <div class="notice">The Odds API (reserva quando a API-Football não traz odds): ${u.the_odds_api?.configurada ? `configurada ✓ · ${u.the_odds_api.chamadas_hoje} / ${u.the_odds_api.limite} hoje` : "não configurada (falta o secret ODDS_API_KEY)"}</div>
     <div class="notice">Notificações push: ${u.push_configurado ? "configuradas ✓" : "ainda não configuradas (faltam as chaves VAPID)"}</div>`;
   $("[data-test]", body).onclick = (e) =>
     busy(e.target, async () => {

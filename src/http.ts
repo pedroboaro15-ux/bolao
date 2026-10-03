@@ -40,7 +40,6 @@ export function predictionView(p: Prediction | null, extras: Extras = ALL_EXTRAS
     pick_ou: mode === "ou" ? p.pick_ou : null,
     home_goals: mode === "cs" ? p.home_goals : null,
     away_goals: mode === "cs" ? p.away_goals : null,
-    joker: p.joker,
     points: p.points,
     hits: p.hits,
   };

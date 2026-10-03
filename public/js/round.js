@@ -9,17 +9,19 @@ let S = null;
 
 const outcome = (h, a) => (h > a ? "1" : h === a ? "X" : "2");
 const isLocked = (m) => m.locked || Date.parse(m.kickoff_utc) <= now();
-const blank = () => ({ pick_1x2: null, mode: null, pick_ou: null, home_goals: null, away_goals: null, joker: false });
+const blank = () => ({ pick_1x2: null, mode: null, pick_ou: null, home_goals: null, away_goals: null });
 const goalsOf = (d) => (d.mode === "cs" ? [d.home_goals ?? null, d.away_goals ?? null] : [null, null]);
 const ouOf = (d) => (d.mode === "ou" ? (d.pick_ou ?? null) : null);
 /** O que vai para o servidor: só os campos do modo escolhido. */
-const payload = (d) => ({ pick_1x2: d.pick_1x2, mode: d.mode ?? null, pick_ou: ouOf(d), home_goals: goalsOf(d)[0], away_goals: goalsOf(d)[1], joker: !!d.joker });
-const complete = (d) => !!d && !!d.pick_1x2 && (d.mode === "ou" ? !!d.pick_ou : d.mode === "cs" ? d.home_goals != null && d.away_goals != null : true);
+const payload = (d) => ({ pick_1x2: d.pick_1x2, mode: d.mode ?? null, pick_ou: ouOf(d), home_goals: goalsOf(d)[0], away_goals: goalsOf(d)[1] });
+/** Rodada que exige gols (vencedor + gols) não aceita "só vencedor". */
+const needsGoals = (m) => S?.data?.rodada?.required === "winner_goals" && (extrasOf(m).ou || extrasOf(m).cs);
+const complete = (d, m) => !!d && !!d.pick_1x2 && (d.mode === "ou" ? !!d.pick_ou : d.mode === "cs" ? d.home_goals != null && d.away_goals != null : !(m && needsGoals(m)));
 const same = (d, mine) => {
   if (!mine || !d) return false;
   const a = payload(d);
   const b = payload(mine);
-  return a.pick_1x2 === b.pick_1x2 && a.mode === b.mode && a.pick_ou === b.pick_ou && a.home_goals === b.home_goals && a.away_goals === b.away_goals && a.joker === b.joker;
+  return a.pick_1x2 === b.pick_1x2 && a.mode === b.mode && a.pick_ou === b.pick_ou && a.home_goals === b.home_goals && a.away_goals === b.away_goals;
 };
 /** Extras ligados pelo admin neste jogo. */
 const extrasOf = (m) => m.extras ?? { ou: true, cs: true };
@@ -39,7 +41,7 @@ export function render(view, { id }) {
   }, 20000);
   const onClick = (e) => handle(e);
   const beforeUnload = (e) => {
-    if (S?.data?.jogos.some((m) => dirty(m) && complete(S.drafts[m.id]))) {
+    if (S?.data?.jogos.some((m) => dirty(m) && complete(S.drafts[m.id], m))) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -165,16 +167,6 @@ function handle(e) {
     d.away_goals ??= 0;
     d[side] = Math.max(0, Math.min(9, d[side] + Number(t.dataset.d)));
     d.pick_1x2 = outcome(d.home_goals, d.away_goals); // mexer no placar muda o vencedor junto
-  } else if (act === "joker") {
-    if (!complete(d)) return toast("Complete o palpite antes de usar o coringa.", "err");
-    const on = !d.joker;
-    for (const x of S.data.jogos) {
-      if (x.id !== m.id && S.drafts[x.id]?.joker) {
-        S.drafts[x.id].joker = false;
-        S.touched.add(x.id);
-      }
-    }
-    d.joker = on;
   }
   paint();
   scheduleSave();
@@ -191,7 +183,7 @@ async function save(keepalive = false) {
     S.again = true;
     return;
   }
-  const send = S.data.jogos.filter((m) => dirty(m) && complete(S.drafts[m.id]) && !S.errors[m.id]);
+  const send = S.data.jogos.filter((m) => dirty(m) && complete(S.drafts[m.id], m) && !S.errors[m.id]);
   if (!send.length) return;
   const mine = S;
   S.saving = true;
@@ -228,7 +220,6 @@ function maxPoints(m, d) {
   const w = m.odds_1x2?.[d.pick_1x2];
   const x = d.mode === "ou" ? m.odds_ou?.[d.pick_ou] : d.mode === "cs" ? m.cs?.[`${d.home_goals}-${d.away_goals}`] : null;
   let p = d.mode === "cs" ? (x ? x - 1 : 0) : (w ? w - 1 : 0) + (d.mode === "ou" && x ? x - 1 : 0);
-  if (d.joker && S.data.coringa.ativo) p *= S.data.coringa.multiplicador;
   return p;
 }
 
@@ -263,12 +254,12 @@ function paint() {
     groups.set(m.league.id, g);
   }
   const open = d.jogos.filter((m) => !isLocked(m) && !m.voided);
-  const done = open.filter((m) => S.drafts[m.id] && complete(S.drafts[m.id]) && !dirty(m)).length;
+  const done = open.filter((m) => S.drafts[m.id] && complete(S.drafts[m.id], m) && !dirty(m)).length;
 
   const rank = S.rank;
   const meIdx = rank ? rank.findIndex((r) => r.user_id === state.user.id) : -1;
   const meRow = meIdx >= 0 ? rank[meIdx] : null;
-  const position = meRow ? 1 + rank.filter((r) => r.points > meRow.points || (r.points === meRow.points && r.hits > meRow.hits)).length : null;
+  const position = meRow ? 1 + rank.filter((r) => r.points > meRow.points).length : null;
 
   S.view.innerHTML = `
   <div class="page">
@@ -287,7 +278,7 @@ function paint() {
       </aside>
 
       <section>
-        <h1 class="section-title">${esc(d.rodada.title)}<small>${fmtDate(d.rodada.date)} · ${statusText(d.rodada.status)}</small></h1>
+        <h1 class="section-title">${esc(d.rodada.title)}<small>${fmtDate(d.rodada.date)} · ${statusText(d.rodada.status)} · ${d.rodada.required === "winner_goals" ? "vale vencedor + gols" : "vale o vencedor"}</small></h1>
         ${d.rodada.id !== d.atual ? `<div class="notice" style="margin-bottom:12px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span>Você está vendo uma rodada anterior (encerrada).</span><button class="btn small primary" data-act="round" data-v="${esc(d.atual ?? "")}">${d.atual ? "Voltar para a rodada de hoje" : "Voltar para o início"}</button></div>` : ""}
         ${d.outras?.length > 1 ? `<div class="chips mobile-only" aria-label="Rodadas">${d.outras.map((r) => `<button class="chip" data-act="round" data-v="${esc(r.id)}" aria-pressed="${r.id === d.rodada.id}">${esc(r.title)}${r.id === d.atual ? " · atual" : ""}</button>`).join("")}</div>` : ""}
         <div class="chips mobile-only" aria-label="Campeonatos">
@@ -318,7 +309,7 @@ function paint() {
         <div class="card card-pad">${zebraBlock(S.zebra, "Maior zebra da rodada")}</div>
         <div class="card card-pad">
           <h3 style="font-size:16px;margin-bottom:6px">Como pontua</h3>
-          <p class="hint" style="margin:0">Cada acerto vale o lucro da odd justa (odd − 1). Placar exato vale no lugar do vencedor. O coringa dobra um jogo por rodada.</p>
+          <p class="hint" style="margin:0">Cada acerto vale o lucro da odd justa (odd − 1). Placar exato vale no lugar do vencedor. Pontos iguais dividem a posição.</p>
         </div>
       </aside>
     </div>
@@ -360,7 +351,7 @@ function matchCard(m) {
   const scored = m.settled && !m.voided;
   const real = scored ? outcome(m.home_goals, m.away_goals) : null;
   const realOu = scored ? (m.home_goals + m.away_goals > 2.5 ? "over" : "under") : null;
-  const badge = m.voided ? `<span class="badge end">Anulado</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? (m.live ? `<span class="badge live">${esc(liveLabel(m.live))}</span>` : now() - Date.parse(m.kickoff_utc) > 150 * 60_000 ? `<span class="badge end">Aguardando resultado</span>` : `<span class="badge live">Em andamento</span>`) : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
+  const badge = m.voided ? `<span class="badge end">Excluído da rodada</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? (m.live ? `<span class="badge live">${esc(liveLabel(m.live))}</span>` : now() - Date.parse(m.kickoff_utc) > 150 * 60_000 ? `<span class="badge end">Aguardando resultado</span>` : `<span class="badge live">Em andamento</span>`) : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
   const top = `<div class="ev-top"><span>${fmtWhen(m.kickoff_utc)}</span>${badge}</div>`;
   const teams = `<div class="teams">${teamRow(m, "h", scored)}${teamRow(m, "a", scored)}</div>`;
   const cur = locked ? mine : d;
@@ -398,10 +389,10 @@ function matchCard(m) {
   const modeLabel = mode === "ou" ? "Gols" : mode === "cs" ? "Placar exato" : "Só o vencedor";
   const seg = locked
     ? `<span>${modeLabel}</span>`
-    : `<div class="seg" role="group" aria-label="Palpite extra"><button aria-pressed="${mode === null}" data-act="mode" data-m="${m.id}" data-v="none">Só vencedor</button>${ex.ou ? `<button aria-pressed="${mode === "ou"}" data-act="mode" data-m="${m.id}" data-v="ou">Gols</button>` : ""}${ex.cs ? `<button aria-pressed="${mode === "cs"}" data-act="mode" data-m="${m.id}" data-v="cs">Placar exato</button>` : ""}</div>`;
+    : `<div class="seg" role="group" aria-label="Palpite extra">${needsGoals(m) ? "" : `<button aria-pressed="${mode === null}" data-act="mode" data-m="${m.id}" data-v="none">Só vencedor</button>`}${ex.ou ? `<button aria-pressed="${mode === "ou"}" data-act="mode" data-m="${m.id}" data-v="ou">Gols</button>` : ""}${ex.cs ? `<button aria-pressed="${mode === "cs"}" data-act="mode" data-m="${m.id}" data-v="cs">Placar exato</button>` : ""}</div>`;
   const showExtra = locked ? !!(ex.ou || ex.cs) || !!mode : ex.ou || ex.cs;
   const noOdds = !o1 && !locked ? `<div class="hint">Odds a caminho. Já dá para escolher o vencedor: os pontos usam a odd do início do jogo.</div>` : "";
-  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>${locked ? "odd congelada no início" : o1 ? `odd justa · congela às ${fmtClock(m.kickoff_utc)}` : "odds a caminho"}</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
+  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>${locked ? "odd congelada no início" : o1 ? `odd justa · congela às ${fmtClock(m.kickoff_utc)}` : "odds a caminho"}</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${needsGoals(m) ? (ex.ou && ex.cs ? "Obrigatório: gols OU placar exato (um dos dois)" : "Obrigatório nesta rodada") : ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
 
   let foot;
   if (scored) {
@@ -409,21 +400,20 @@ function matchCard(m) {
     else {
       const wOk = mine.pick_1x2 === real;
       const xOk = extraHit(m, mine);
-      foot = `<span><span class="tick ${wOk ? "y" : "n"}">Vencedor ${wOk ? "✓" : "✗"}</span>${mine.mode ? ` · <span class="tick ${xOk ? "y" : "n"}">${mine.mode === "ou" ? "Gols" : "Placar"} ${xOk ? "✓" : "✗"}</span>` : ""}${mine.joker ? " · coringa" : ""}</span><span class="pts ${mine.points > 0 ? "pos" : ""}">${mine.points > 0 ? signed(mine.points) : "0.00"}</span>${mine.mode === "cs" && wOk && !xOk ? `<span class="hint" style="flex-basis:100%">Placar exato errado, mas o vencedor certo também conta.</span>` : ""}`;
+      foot = `<span><span class="tick ${wOk ? "y" : "n"}">Vencedor ${wOk ? "✓" : "✗"}</span>${mine.mode ? ` · <span class="tick ${xOk ? "y" : "n"}">${mine.mode === "ou" ? "Gols" : "Placar"} ${xOk ? "✓" : "✗"}</span>` : ""}</span><span class="pts ${mine.points > 0 ? "pos" : ""}">${mine.points > 0 ? signed(mine.points) : "0.00"}</span>${mine.mode === "cs" && wOk && !xOk ? `<span class="hint" style="flex-basis:100%">Placar exato errado, mas o vencedor certo também conta.</span>` : ""}`;
     }
     foot += ``;
   } else if (locked) {
-    foot = `<span>${mine ? "Palpite travado" : "Você não palpitou"}${mine?.joker ? " · coringa" : ""}</span><a data-link href="/jogo/${esc(m.id)}">Palpites de todos ›</a>`;
+    foot = `<span>${mine ? "Palpite travado" : "Você não palpitou"}</span><a data-link href="/jogo/${esc(m.id)}">Palpites de todos ›</a>`;
   } else {
     const err = S.errors[m.id];
     let status;
     if (err) status = `<span class="hint err">${esc(err)}</span>`;
-    else if (dirty(m) && complete(d)) status = `<span><i class="st-dot pending"></i>Salvando…</span>`;
-    else if (dirty(m)) status = `<span class="hint err"><i class="st-dot warn"></i>${d?.pick_1x2 ? (d.mode === "ou" ? "Falta escolher mais ou menos de 2,5 (ou toque em Só vencedor)" : "Falta o placar") : "Falta escolher o vencedor"}</span>`;
+    else if (dirty(m) && complete(d, m)) status = `<span><i class="st-dot pending"></i>Salvando…</span>`;
+    else if (dirty(m)) status = `<span class="hint err"><i class="st-dot warn"></i>${!d?.pick_1x2 ? "Falta escolher o vencedor" : d.mode === "ou" ? "Falta escolher mais ou menos de 2,5" : d.mode === "cs" ? "Falta o placar" : "Nesta rodada os gols também são obrigatórios"}</span>`;
     else if (mine) status = o1 ? `<span><i class="st-dot"></i>Salvo · pode render <b class="num">+${pts(maxPoints(m, mine))}</b></span>` : `<span><i class="st-dot"></i>Salvo · a odd aparece quando chegar</span>`;
-    else status = `<span class="hint">${ex.ou || ex.cs ? "Escolha o vencedor (o extra é opcional)" : "Escolha o vencedor"}</span>`;
-    const jk = S.data.coringa.ativo ? `<button class="jk" data-act="joker" data-m="${m.id}" aria-pressed="${!!d?.joker}" ${!complete(d) ? "disabled" : ""} title="Vale ×${S.data.coringa.multiplicador} neste jogo. Um por rodada.">${d?.joker ? `Coringa ×${S.data.coringa.multiplicador}` : "Usar coringa"}</button>` : "";
-    foot = `${status}${jk}`;
+    else status = `<span class="hint">${needsGoals(m) ? "Obrigatório: vencedor + gols" : ex.ou || ex.cs ? "Escolha o vencedor (o extra é opcional)" : "Escolha o vencedor"}</span>`;
+    foot = status;
   }
   return `<div class="ev">${top}${teams}${mk}<div class="ev-f">${foot}</div></div>`;
 }

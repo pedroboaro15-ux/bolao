@@ -85,6 +85,31 @@ describe("campeonatos", () => {
   });
 });
 
+describe("campeonato de confrontos (API)", () => {
+  it("pontos corridos: participantes, tabela calculada com os dias de rodada e confrontos por rodada", async () => {
+    const hoje = (await json(await call("/api/rodada/atual", { user: "lucas" }))).hoje;
+    const body = { name: "Brasileirão da Galera", start_date: "2026-01-01", end_date: hoje, format: "pontos", legs: 1, participants: ["lucas", "ana", "carlos", "bia"], goal_step: 1 };
+    expect((await call("/api/admin/campeonatos", { method: "POST", user: "admin", body: { ...body, participants: ["lucas"] } })).status).toBe(400);
+    const { id } = await json(await call("/api/admin/campeonatos", { method: "POST", user: "admin", body }));
+    const d = await json(await call(`/api/campeonatos/${id}/ranking`, { user: "lucas" }));
+    expect(d.confrontos).toBe(true);
+    expect(d.campeonato.formato).toBe("Pontos corridos");
+    expect(d.rodadas_necessarias).toBe(3);
+    expect(d.grupos[0].table).toHaveLength(4);
+    const first = d.rodadas[0];
+    expect(first.date).not.toBeNull();
+    expect(first.fixtures).toHaveLength(2);
+    expect(first.fixtures[0].hg).not.toBeNull(); // o dia já tem pontos
+    expect(d.grupos[0].table.reduce((s: number, r: any) => s + r.J, 0)).toBeGreaterThan(0);
+    expect(d.grupos[0].table[0]).toHaveProperty("last5");
+  });
+
+  it("copa exige participantes suficientes para os grupos", async () => {
+    const r = await call("/api/admin/campeonatos", { method: "POST", user: "admin", body: { name: "Copa", start_date: "2026-10-01", end_date: "2026-12-31", format: "copa", groups: 3, participants: ["lucas", "ana", "carlos", "bia"] } });
+    expect(r.status).toBe(400);
+  });
+});
+
 describe("excluir rodada", () => {
   it("some do histórico, dos palpites e do ranking geral", async () => {
     const antes = await json(await call("/api/ranking?escopo=geral", { user: "lucas" }));
@@ -137,6 +162,17 @@ describe("pedidos: votos e sugestões", () => {
     const adm = await json(await call("/api/admin/pedidos", { user: "admin" }));
     expect(adm.sugestoes.filter((s: any) => s.nickname === "Carlão")).toHaveLength(5);
     expect((await call("/api/admin/pedidos", { user: "carlos" })).status).toBe(403);
+  });
+});
+
+
+describe("competição paga (opcional)", () => {
+  it("guarda e mostra o valor combinado; sem valor é gratuita", async () => {
+    const { id } = await json(await call("/api/admin/campeonatos", { method: "POST", user: "admin", body: { name: "Copa Paga", start_date: "2026-10-01", end_date: "2026-10-31", fee: "R$ 20 por pessoa" } }));
+    const r = await json(await call(`/api/campeonatos/${id}/ranking`, { user: "lucas" }));
+    expect(r.campeonato.fee).toBe("R$ 20 por pessoa");
+    const { id: id2 } = await json(await call("/api/admin/campeonatos", { method: "POST", user: "admin", body: { name: "Copa Grátis", start_date: "2026-10-01", end_date: "2026-10-31" } }));
+    expect((await json(await call(`/api/campeonatos/${id2}/ranking`, { user: "lucas" }))).campeonato.fee).toBe("");
   });
 });
 

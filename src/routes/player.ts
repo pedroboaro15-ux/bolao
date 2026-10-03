@@ -17,11 +17,12 @@ import { answersOf, isClosed, isSettledQ, questionView, questionsOfDay } from ".
 import { bolaoDay, isDateString } from "../lib/dates";
 
 /** Rodada de um dia que já passou aparece como encerrada, mesmo se algum resultado ainda não chegou. */
-const roundSummary = (r: { id: string; title: string; date: string; status: string }, today = bolaoDay()) => ({
+const roundSummary = (r: { id: string; title: string; date: string; status: string; required?: string }, today = bolaoDay()) => ({
   id: r.id,
   title: r.title,
   date: r.date,
   status: r.date < today && r.status !== "draft" ? "finished" : r.status,
+  required: r.required === "winner_goals" ? "winner_goals" : "winner",
 });
 
 async function roundView(repo: Repo, roundId: string, userId: string, settings: Settings, now: Date, isAdmin: boolean) {
@@ -32,7 +33,6 @@ async function roundView(repo: Repo, roundId: string, userId: string, settings: 
   return {
     rodada: roundSummary(round),
     jogos: matches.map((m) => matchView(m, mineByMatch.get(m.id) ?? null, settings, now)),
-    coringa: { ativo: settings.jokerEnabled, multiplicador: settings.jokerMultiplier },
     agora: now,
     raw: matches,
   };
@@ -130,33 +130,21 @@ export function playerRoutes() {
         erros[inp.match_id] = "Jogo não pertence a esta rodada";
         continue;
       }
+      // Rodada que exige gols: só vencedor não basta (gols ou placar exato, se algum dos dois estiver ligado).
+      const precisaGols = round.required === "winner_goals" && (settings.goalsEnabled || settings.scoreEnabled);
+      if (precisaGols && inp.mode === null) {
+        erros[inp.match_id] = settings.goalsEnabled ? "Nesta rodada os gols também são obrigatórios: escolha mais ou menos de 2,5 (ou o placar exato)" : "Nesta rodada o placar exato também é obrigatório";
+        continue;
+      }
       const blocked = predictionBlockedReason(m, round, now);
       if (blocked) {
         erros[inp.match_id] = blocked;
         continue;
       }
-      if (!settings.jokerEnabled) inp.joker = false;
       accepted.push(inp);
     }
 
-    // Coringa: um por rodada. Se o atual está em jogo já iniciado, não dá para trocar.
     const writes: Write[] = [];
-    const jokers = accepted.filter((a) => a.joker);
-    if (jokers.length > 1) throw badRequest("Só é permitido um coringa por rodada");
-    if (jokers.length === 1) {
-      const target = jokers[0].match_id;
-      const acceptedIds = new Set(accepted.map((a) => a.match_id));
-      for (const p of existing) {
-        if (!p.joker || p.match_id === target) continue;
-        const m = matchById.get(p.match_id)!;
-        if (isLocked(m.kickoff_utc, now)) {
-          erros[target] = "Seu coringa desta rodada já está em um jogo que começou";
-          accepted = accepted.filter((a) => a.match_id !== target);
-          break;
-        }
-        if (!acceptedIds.has(p.match_id)) writes.push({ op: "merge", path: `predictions/${p.id}`, data: { joker: false, updated_at: now } });
-      }
-    }
 
     const existingByMatch = new Map(existing.map((p) => [p.match_id, p]));
     for (const a of accepted) {
@@ -170,7 +158,7 @@ export function playerRoutes() {
         pick_ou: a.pick_ou,
         home_goals: a.home_goals,
         away_goals: a.away_goals,
-        joker: a.joker,
+        joker: false,
         points: null,
         hits: null,
         created_at: prev?.created_at ?? now,
@@ -236,7 +224,6 @@ export function playerRoutes() {
       titulo,
       rows: (st?.rows ?? []).map((x) => withNick(x, nick)),
       zebra: st?.zebra ? withNick(st.zebra as any, nick) : null,
-      streaks: (st?.streaks ?? []).map((x) => withNick(x, nick)),
       updated_at: st?.updated_at ?? null,
       opcoes: { rodadas: rounds.slice(0, 30).map((x) => roundSummary(x)), meses },
     });

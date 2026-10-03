@@ -8,12 +8,13 @@ export interface PickLike {
   pick_ou: PickOu | null;
   home_goals: number | null;
   away_goals: number | null;
-  joker: boolean;
+  /** Antigo coringa: ignorado (a regra foi excluída). */
+  joker?: boolean;
 }
 
 export interface ScoreResult {
   points: number;
-  /** Acertos que desempatam o ranking: vencedor e extra contam 1 cada; placar exato conta 1 (substitui o vencedor). */
+  /** Acertos (estatística): vencedor e extra contam 1 cada; placar exato conta 1 (substitui o vencedor). Não desempatam. */
   hits: number;
   parts: { winner: number; ou: number; cs: number };
 }
@@ -39,13 +40,12 @@ const profit = (odd: number | undefined | null, mult: number) => (odd && odd > 1
  * - sem extra (ou extra desligado): só o vencedor.
  * - modo "ou": acertou o vencedor → pts do vencedor; acertou o O/U → soma os pts do O/U.
  * - modo "cs": acertou o placar → SÓ os pts do placar; errou o placar mas acertou o vencedor → pts do vencedor.
- * - coringa: multiplica o total do jogo.
  */
 export function scorePrediction(
   pick: PickLike,
   result: { home: number; away: number },
   odds: OddsMap | null | undefined,
-  cfg: Pick<Settings, "winnerMultiplier" | "ouMultiplier" | "csMultiplier" | "jokerEnabled" | "jokerMultiplier" | "oddCap">,
+  cfg: Pick<Settings, "winnerMultiplier" | "ouMultiplier" | "csMultiplier" | "oddCap">,
   extras: Extras = ALL_EXTRAS,
 ): ScoreResult {
   const mode = activeMode(pick.mode, extras);
@@ -73,7 +73,6 @@ export function scorePrediction(
     }
   }
 
-  let points = round2(parts.winner + parts.ou + parts.cs);
-  if (pick.joker && cfg.jokerEnabled) points = round2(points * cfg.jokerMultiplier);
+  const points = round2(parts.winner + parts.ou + parts.cs);
   return { points, hits, parts };
 }

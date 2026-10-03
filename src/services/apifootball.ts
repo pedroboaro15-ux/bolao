@@ -125,7 +125,7 @@ export class ApiFootball {
   private lastCall = 0;
 
   constructor(
-    private env: Env,
+    readonly env: Env,
     private repo: Repo,
     private settings: Settings,
   ) {}
@@ -172,11 +172,21 @@ export class ApiFootball {
     return rows.map(parseFixture);
   }
 
-  /** Até 20 ids por chamada. */
+  /**
+   * Um pedido por jogo (`id=`): o plano grátis recusa o parâmetro `ids` ("Free plans do not have access to the Ids parameter").
+   * Se a cota acabar no meio, devolve o que já veio; se nada veio, repassa o erro.
+   */
   async fixturesByIds(ids: number[], opts: { keepReserve?: boolean } = {}): Promise<FixtureView[]> {
-    if (ids.length === 0) return [];
-    const rows = await this.call("/fixtures", { ids: ids.slice(0, 20).join("-") }, opts);
-    return rows.map(parseFixture);
+    const out: FixtureView[] = [];
+    for (const id of ids) {
+      try {
+        out.push(...(await this.call("/fixtures", { id }, opts)).map(parseFixture));
+      } catch (e) {
+        if (out.length && e instanceof QuotaError) break;
+        throw e;
+      }
+    }
+    return out;
   }
 
   /**

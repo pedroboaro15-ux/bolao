@@ -11,6 +11,7 @@ import { round2 } from "../lib/odds";
 import { ApiFootball, FINISHED } from "../services/apifootball";
 import { recalcRound } from "../services/results";
 import { rebuildTotals, sortRows } from "../services/standings";
+import { FORMATS, buildTournament, matchdaysNeeded, type Matchday, type TournamentConfig, type TournamentFormat } from "../lib/tournament";
 
 /**
  * Social e organização:
@@ -33,6 +34,15 @@ export interface Championship {
   start_date: string;
   end_date: string;
   prize: string;
+  /** Competição paga (opcional): valor combinado entre os participantes. O app só mostra; não há pagamento no site. */
+  fee?: string;
+  /** Campeonato de confrontos 1×1. Sem formato = ranking de pontos (como antes). */
+  format?: TournamentFormat | null;
+  legs?: 1 | 2 | null;
+  groups?: number | null;
+  advance?: number | null;
+  goal_step?: number | null;
+  participants?: string[] | null;
   created_at: Date;
 }
 
@@ -61,10 +71,54 @@ export function parseChampionship(b: any): Omit<Championship, "created_at"> {
   const start_date = String(b?.start_date ?? "");
   const end_date = String(b?.end_date ?? "");
   const prize = String(b?.prize ?? "").trim().slice(0, 600);
+  const fee = clean(b?.fee, 60);
   if (name.length < 3) throw badRequest("Dê um nome ao campeonato");
   if (!isDateString(start_date) || !isDateString(end_date)) throw badRequest("Datas inválidas");
   if (end_date < start_date) throw badRequest("O fim precisa ser depois do início");
-  return { name, start_date, end_date, prize };
+  const format = b?.format && b.format in FORMATS ? (b.format as TournamentFormat) : null;
+  if (!format) return { name, start_date, end_date, prize, fee, format: null, legs: null, groups: null, advance: null, goal_step: null, participants: null };
+  const legs = Number(b?.legs) === 2 ? 2 : 1;
+  const participants = [...new Set((Array.isArray(b?.participants) ? b.participants : []).map(String))].slice(0, 64);
+  if (participants.length < 2) throw badRequest("Escolha pelo menos 2 participantes");
+  const groups = Math.max(1, Math.min(8, Math.floor(Number(b?.groups) || 1)));
+  const advance = Math.max(1, Math.min(4, Math.floor(Number(b?.advance) || 2)));
+  if ((format === "grupos" || format === "copa") && participants.length < groups * 2) throw badRequest(`${groups} grupos precisam de pelo menos ${groups * 2} participantes`);
+  const goal_step = Math.round(Math.min(10, Math.max(0.1, Number(String(b?.goal_step ?? "1").replace(",", ".")) || 1)) * 100) / 100;
+  return { name, start_date, end_date, prize, fee, format, legs, groups, advance, goal_step, participants };
+}
+
+/** Configuração do confronto a partir do que está gravado. */
+export const tournamentConfig = (ch: Championship): TournamentConfig | null =>
+  ch.format && ch.participants?.length
+    ? { format: ch.format, legs: ch.legs === 2 ? 2 : 1, participants: ch.participants, groups: ch.groups ?? 1, advance: ch.advance ?? 2, goalStep: ch.goal_step ?? 1 }
+    : null;
+
+/**
+ * Dias do campeonato: cada dia do período que teve rodada de jogos é uma rodada do campeonato. O resultado de cada
+ * participante no dia é a soma dos rankings das rodadas desse dia e das perguntas extras do dia.
+ */
+export async function championshipDays(repo: Repo, ch: Championship, today = bolaoDay()): Promise<Matchday[]> {
+  const rounds = (await repo.rounds(400)).filter((r) => r.status !== "draft" && r.date >= ch.start_date && r.date <= ch.end_date);
+  const dates = [...new Set(rounds.map((r) => r.date))].sort();
+  const paths = dates.flatMap((d) => [...rounds.filter((r) => r.date === d).map((r) => `standings/round_${r.id}`), `standings/questions_${d}`]);
+  const docs = new Map<string, Standings>();
+  for (let i = 0; i < paths.length; i += 100) {
+    const got = await repo.db.getMany<Standings>(paths.slice(i, i + 100));
+    got.forEach((d, j) => d && docs.set(paths[i + j], d.data));
+  }
+  return dates.map((date) => {
+    const ofDay = rounds.filter((r) => r.date === date);
+    const scores = new Map<string, { points: number; hits: number }>();
+    for (const p of [...ofDay.map((r) => `standings/round_${r.id}`), `standings/questions_${date}`]) {
+      for (const row of docs.get(p)?.rows ?? []) {
+        const cur = scores.get(row.user_id) ?? { points: 0, hits: 0 };
+        cur.points = round2(cur.points + row.points);
+        cur.hits += row.hits;
+        scores.set(row.user_id, cur);
+      }
+    }
+    return { date, final: date < today || ofDay.every((r) => r.status === "finished"), started: date <= today, scores };
+  });
 }
 
 /** Há rodada (não rascunho) no dia de hoje? Com rodada, votos e sugestões ficam fechados. */
@@ -219,8 +273,24 @@ export function extraPlayerRoutes() {
     if (!doc) throw notFound("Campeonato não encontrado");
     const users = await repo.users();
     const nick = new Map(users.map((u) => [u.id, u.nickname]));
+    const campeonato = { id: doc.id, ...doc.data, formato: doc.data.format ? FORMATS[doc.data.format] : null };
+    const cfg = tournamentConfig(doc.data);
+    if (cfg) {
+      const t = buildTournament(cfg, await championshipDays(repo, doc.data));
+      const nome = (id: string | null) => (id ? (nick.get(id) ?? "?") : null);
+      return c.json({
+        campeonato,
+        confrontos: true,
+        rodadas_necessarias: matchdaysNeeded(cfg),
+        grupos: t.groups.map((g) => ({ ...g, table: g.table.map((r) => ({ ...r, nickname: nome(r.user_id) })) })),
+        rodadas: t.rounds.map((r) => ({ ...r, fixtures: r.fixtures.map((f) => ({ ...f, home_nick: nome(f.home), away_nick: nome(f.away) })) })),
+        mata: t.knockout.map((k) => ({ ...k, ties: k.ties.map((ti) => ({ ...ti, a_nick: nome(ti.a), b_nick: nome(ti.b), winner_nick: nome(ti.winner) })) })),
+        campeao: nome(t.champion),
+        rows: [],
+      });
+    }
     const rows = (await championshipRows(repo, doc.data)).filter((x) => nick.has(x.user_id)).map((x) => ({ ...x, nickname: nick.get(x.user_id)! }));
-    return c.json({ campeonato: { id: doc.id, ...doc.data }, rows });
+    return c.json({ campeonato, confrontos: false, rows });
   });
 
   return r;

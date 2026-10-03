@@ -5,6 +5,7 @@ import { badRequest, conflict, notFound } from "../lib/errors";
 import { bolaoDay, isDateString, utcDate } from "../lib/dates";
 import { parseSettingsPatch } from "../lib/settings";
 import { ApiFootball, PROVIDER } from "../services/apifootball";
+import { ODDS_API_DAILY, ODDS_PROVIDER } from "../services/oddsapi";
 import { chosenToday, createRound, freezeStarted, loadFixtures, refreshMatchOdds, setManualOdds } from "../services/rounds";
 import { recalcRound } from "../services/results";
 import { notifyFinished } from "../services/cron";
@@ -77,6 +78,7 @@ export function adminRoutes() {
         date,
         fixtureIds: Array.isArray(body.fixtureIds) ? body.fixtureIds : [],
         open,
+        required: body.required === "winner_goals" ? "winner_goals" : "winner",
       },
       cache.fixtures,
       settings,
@@ -116,6 +118,10 @@ export function adminRoutes() {
       data.status = body.status;
     }
     if (body.title !== undefined) data.title = String(body.title).trim().slice(0, 80);
+    if (body.required !== undefined) {
+      if (!["winner", "winner_goals"].includes(body.required)) throw badRequest("Obrigatório inválido");
+      data.required = body.required;
+    }
     if (Object.keys(data).length) await repo.db.commit([{ op: "merge", path: `rounds/${round.id}`, data }]);
     return c.json({ ok: true });
   });
@@ -388,6 +394,7 @@ export function adminRoutes() {
     return c.json({
       data: hoje,
       api_football: { chamadas_hoje: await repo.usage(hoje, PROVIDER), limite: settings.apiFootballDailyLimit, reserva: settings.apiReserve },
+      the_odds_api: { configurada: !!c.env.ODDS_API_KEY, chamadas_hoje: await repo.usage(hoje, ODDS_PROVIDER), limite: ODDS_API_DAILY },
       push_configurado: pushConfigured(c.env),
       reinicia_em_utc: "00:00",
     });

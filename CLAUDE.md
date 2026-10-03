@@ -37,9 +37,9 @@ A pontuação é baseada em **odds congeladas** no início do jogo. Não há pag
 1. **API-Football (api-sports.io)**, plano free (~100 req/dia):
    - `/fixtures?date=YYYY-MM-DD` → jogos do dia
    - `/odds?fixture=ID` → mercados "Match Winner", "Goals Over/Under" (2.5) e "Exact Score"
-   - `/fixtures?id=ID` → placar final (vários jogos numa chamada só: `/fixtures?ids=ID-ID-ID`)
-2. **The Odds API** (opcional, free ~500 créditos/mês): odds 1X2 de Pinnacle/Betfair
-   quando disponível (`regions=eu`, `markets=h2h`).
+   - `/fixtures?id=ID` → placar final, **um jogo por chamada** (o plano grátis recusa `ids=ID-ID-ID`)
+2. **The Odds API** (free 500 créditos/mês; secret `ODDS_API_KEY`): **fonte principal** das odds 1X2 (Pinnacle/Betfair,
+   `regions=eu`, `markets=h2h`, 1 crédito por pedido, máx. 16/dia). A API-Football fica de reserva para odds e é usada para jogos e placares.
 3. Preferir Pinnacle/Betfair quando disponível; senão, a mediana das casas.
 
 **Economia de requisições:** o cron só busca odds dos jogos **selecionados** pelo admin,
@@ -230,12 +230,13 @@ Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da ma
 
 ## Notas de implementação (o que ficou diferente do plano acima)
 - **Feito:** todas as etapas 1–7, os extras da fase 2 (WhatsApp, tema claro/escuro, PWA, estatísticas) e as notificações push.
-- **Não feito:** The Odds API (opcional). Só a API-Football alimenta as odds; quando ela não traz, o admin digita as odds (fonte "manual").
+- **The Odds API é a fonte principal do 1X2** (`src/services/oddsapi.ts`), para poupar a API-Football (que fica para placares). Liga mapeada para a chave do esporte, jogo achado por nome dos times + horário (±2 h), prefere Pinnacle/Betfair, senão mediana. Só `h2h` (1 crédito), no máximo 16 pedidos/dia (~480 dos 500 créditos/mês). Sem O/U de mercado, o Mais/Menos 2,5 justo vem do Poisson ajustado ao 1X2 (fonte "modelo"). Sem chave, liga não mapeada, jogo não achado ou cota do dia gasta → API-Football. O admin ainda pode digitar as odds (fonte "manual").
+- **Plano grátis da API-Football não aceita `ids`** ("Free plans do not have access to the Ids parameter"): placares e ao vivo usam `/fixtures?id=X`, uma chamada por jogo (ao vivo: até 4 jogos por atualização).
 - **API-Football grátis:** ~10 chamadas por minuto além das 100/dia. Ao criar a rodada só as 4 primeiras odds são buscadas na hora (com pausa
   entre chamadas); o cron horário completa o resto. As odds automáticas param quando sobra só a reserva (padrão 25 chamadas, para placares).
   O plano grátis pode restringir temporadas/datas: `Admin → APIs → Testar` mostra o erro real da API.
 - **Odds e o limite de 10 ms de CPU do Workers grátis:** a resposta da API com todas as casas passa de 190 KB, e só lê-la e calcular o modelo estourava o limite (as odds nunca chegavam). Agora cada pedido pede **uma casa só** (Pinnacle, ~6 KB; se ela não tiver o jogo, Bet365), o placar exato vem do Poisson quando a casa não traz o mercado, e a busca do Poisson usa grades cada vez mais finas (~350 avaliações em vez de ~2.500). Cada execução processa **1 jogo** de odds (cron horário e cron de 15 min). Ao criar a rodada, a tela do admin busca as odds jogo a jogo (um pedido por jogo, ~6,5 s entre eles) e mostra o erro real se algum falhar.
-- **Placar ao vivo:** quando alguém abre a rodada e há jogo em andamento, o Worker faz **uma chamada** à API-Football (`/fixtures?ids=a-b-c`, todos os jogos da rodada) e grava `matches.live`. Reservada no banco antes de chamar: no máximo **1 chamada a cada 5 minutos por rodada**, não importa quantas pessoas olhem; respeita a reserva de chamadas dos placares finais. Em horário de jogo gasta no máximo ~12 chamadas por hora. A tela atualiza a cada 1 min enquanto há jogo rolando. O **resultado oficial** (pontos) continua só do cron, `score.fulltime`.
+- **Placar ao vivo:** quando alguém abre a rodada e há jogo em andamento, o Worker faz **uma chamada por jogo em andamento** à API-Football (`/fixtures?id=X`, até 4) e grava `matches.live`. Reservada no banco antes de chamar: no máximo **1 chamada a cada 5 minutos por rodada**, não importa quantas pessoas olhem; respeita a reserva de chamadas dos placares finais. Em horário de jogo gasta no máximo ~12 chamadas por hora. A tela atualiza a cada 1 min enquanto há jogo rolando. O **resultado oficial** (pontos) continua só do cron, `score.fulltime`.
 - **Odds congelam:** a tela avisa no topo ("congelam no início da partida"), em cada jogo ("odd justa · congela às 20:13") e depois do início ("odd congelada no início").
 - **Ganho por rodada:** `GET /api/ranking/rodadas` junta os rankings já materializados das últimas 10 rodadas (uma tabela participante × rodada no Ranking; em "Meus palpites" cada rodada mostra o ganho dela).
 - **Perfil:** apelido, telefone e senha podem ser alterados **uma vez cada** pela própria pessoa (`users.edits`); depois só o admin (Admin → Usuários → Editar, com "Liberar nova alteração"). Trocar a senha confere a senha atual (conta como tentativa de login) e usa a API de administração do Auth. O ranking mostra sempre o apelido de agora. Apelidos são únicos (sem maiúsculas/acentos).
@@ -261,6 +262,30 @@ Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da ma
 - **Navegar entre rodadas:** `/api/rodadas/:id` (como `/api/rodada/atual`) devolve `outras` (as mais recentes, sempre incluindo a que está aberta) e `atual`; a tela mostra "Você está vendo uma rodada anterior · Voltar para a rodada atual" e marca a rodada atual na lista.
 - **Placar exato errado + vencedor certo:** vale o vencedor (a tela mostra os dois valores antes do jogo e avisa depois). Placar exato certo vale só o placar.
 - **Gols OU placar exato, nunca os dois:** a tela troca de um para o outro limpando o que sobra, e o servidor recusa palpite com `pick_ou` e placar juntos ("Escolha gols OU placar exato, não os dois").
+
+## Alterações recentes (outubro/2026)
+- **The Odds API integrada e virou a fonte principal do 1X2** (`src/services/oddsapi.ts`, teste `test/oddsapi.test.ts`). Liga → chave do
+  esporte por lista fixa (Brasileirão A/B, Copa do Brasil, Libertadores, Sul-Americana, Champions, Europa/Conference, Premier, Championship,
+  La Liga, Serie A, Bundesliga, Ligue 1, Portugal, Holanda, Argentina, Copa do Mundo, Eliminatórias Europa/América do Sul, Nations League,
+  Eurocopa, Copa América, amistosos). A lista oficial (`/v4/sports`, não gasta crédito) é lida 1×/dia e guardada em
+  `fixtures_cache/oddsapi-sports-AAAA-MM-DD`; a chave fixa só vale se existir nela, senão procura a liga pelo nome.
+  Admin → APIs mostra se a chave está configurada e quantos pedidos foram usados no dia (provedor `the-odds-api` em `api_usage`).
+- **Mais/Menos 2,5 do modelo:** quando a fonte não traz O/U, `buildOdds` gera a odd justa a partir do Poisson ajustado ao 1X2 (fonte "modelo").
+- **Placares sem `ids`:** `fixturesByIds` faz um `/fixtures?id=X` por jogo; o cron de resultados processa lotes de 5 e o ao vivo até 4 jogos
+  (`LIVE_MAX_MATCHES`) por atualização.
+- **Design:** o canvas https://claude.ai/artifact/BG1q9GpXuv9fXmixqct5YP tem as telas de apresentação/"Como funciona" (D, E, F) e o
+  "Hero no padrão do site", todas com os tokens de `public/styles.css` (cantos de 4–6 px, Saira até 700, tema escuro #121212).
+- **Implementado em outubro/2026 (a partir de `docs/pedidos-pendentes.md`):**
+  - **Sem coringa**: o servidor ignora `joker` e grava `false` (a coluna fica por causa dos dados antigos); cálculo, configurações e telas sem ele.
+  - **Sem desempate**: pontuação igual divide a posição (1º, 1º, 3º); `hits` continua só como estatística.
+  - **Ranking de sequência removido** (`lib/streaks`, `seq`/`streaks` deixam de ser gravados); a **maior zebra fica**.
+  - Jogo adiado/cancelado aparece como **"excluído da rodada"** (mesmo comportamento: ninguém pontua).
+  - **Obrigatório por rodada** (`rounds.required`): `winner` (só o vencedor) ou `winner_goals` (vencedor + gols: O/U ou placar exato). O servidor recusa o que faltar; o admin escolhe ao criar e pode mudar na tela da rodada.
+  - **Perguntas extras** (antes "Perguntas do dia"); basquete e UFC continuam em espera.
+  - **Competição paga opcional** (`championships.fee`): só texto do valor combinado; o app não recebe pagamento.
+  - **Campeonato de confrontos 1×1** (`src/lib/tournament.ts`, colunas `format`, `legs`, `groups`, `advance`, `goal_step`, `participants`): pontos corridos, grupos, mata-mata ou copa (grupos + mata-mata), só ida ou ida e volta. Cada dia com rodada no período é uma rodada do campeonato; o lucro do dia (rodadas + perguntas extras do dia) vira gols: `piso(lucro / goal_step)`. Vitória 3, empate 1; classificação por pontos, vitórias, saldo e gols pró (tudo igual divide a posição), **reduzida** (pos, nome, P, J, SG) e **completa** (P, J, V, E, D, GP, GC, SG, últimos 5 em bolinhas). Calculado na leitura, nada gravado. Sem formato = ranking de pontos do período, como antes.
+  - **Página de entrada** (`public/js/landing.js`): hero no padrão do site (prancheta "Hero no padrão do site") + "Como funciona" em 4 passos (prancheta D) com exemplos de pontos (tudo certo, um acerto, nenhum, placar exato, placar errado com vencedor certo), tom brincalhão e direto, sem avisos do iPhone.
+- **Ainda em aberto (decisão do dono):** a regra lucro → gol definitiva (hoje: `goal_step`, padrão 1 ponto = 1 gol, ajustável por campeonato) e os **pênaltis** do mata-mata (hoje, provisório: mais acertos no confronto e depois a melhor cabeça de chave).
 
 ## Migração para o Supabase e enxugamento (o que mudou)
 - **Firebase saiu por completo** (Firestore, Auth, `firebase-tools`, regras e índices). O banco agora é o Postgres do Supabase e o login é o Supabase Auth.

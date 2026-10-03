@@ -70,8 +70,8 @@ export async function runFrequent(env: Env, repo: Repo) {
       m.kickoff_utc.getTime() >= now.getTime() - GIVE_UP_HOURS * 3600_000,
   );
   const touched = new Set<string>();
-  for (let i = 0; i < due.length; i += 20) {
-    const chunk = due.slice(i, i + 20);
+  for (let i = 0; i < due.length; i += 5) {
+    const chunk = due.slice(i, i + 5);
     try {
       const fixtures = await api.fixturesByIds(chunk.map((m) => m.api_fixture_id));
       const byFixture = new Map(fixtures.map((f) => [f.id, f]));

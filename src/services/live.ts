@@ -8,6 +8,8 @@ import { isSettled } from "./results";
 export const LIVE_EVERY_MS = 5 * 60_000;
 /** Depois disso o jogo já deveria ter acabado; quem fecha é o cron de resultados. */
 export const LIVE_WINDOW_MIN = 170;
+/** Cada jogo custa 1 chamada (o plano grátis não aceita `ids`): no máximo 4 por atualização. */
+export const LIVE_MAX_MATCHES = 4;
 
 /** Jogos que começaram, ainda não têm resultado oficial e estão dentro da janela de um jogo normal. */
 export function liveCandidates(matches: Pick<Match, "kickoff_utc" | "voided" | "home_goals" | "away_goals">[], now: Date): number[] {
@@ -20,7 +22,7 @@ export function liveCandidates(matches: Pick<Match, "kickoff_utc" | "voided" | "
 }
 
 /**
- * Atualiza o placar ao vivo de uma rodada com UMA chamada à API-Football (até 20 jogos de uma vez, `ids=a-b-c`).
+ * Atualiza o placar ao vivo de uma rodada: uma chamada à API-Football por jogo em andamento (até LIVE_MAX_MATCHES).
  * A "vaga" de 5 minutos é reservada no banco antes de chamar a API: se várias pessoas abrirem a tela ao mesmo tempo,
  * só uma chama. Se a chamada falhar, a vaga continua gasta (protege a cota da API). A reserva de chamadas para
  * os placares finais é respeitada. Devolve quantos jogos foram atualizados.
@@ -30,7 +32,7 @@ export async function refreshLive(repo: Repo, api: ApiFootball, roundId: string,
   if (!idx.length) return 0;
   const slot = await takeSlot(repo.db, `live-${roundId}`, 1, LIVE_EVERY_MS, now);
   if (!slot.ok) return 0;
-  const targets = idx.slice(0, 20).map((i) => matches[i]);
+  const targets = idx.slice(0, LIVE_MAX_MATCHES).map((i) => matches[i]);
   try {
     const fixtures = await api.fixturesByIds(targets.map((m) => m.api_fixture_id), { keepReserve: true });
     const byFixture = new Map(fixtures.map((f) => [f.id, f]));

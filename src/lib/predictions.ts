@@ -39,7 +39,7 @@ export function parsePredictionInput(raw: any, extras: Extras = ALL_EXTRAS): Pre
   if (!match_id) throw badRequest("Jogo não informado");
   const pick_1x2 = raw.pick_1x2 as Pick1x2;
   if (!["1", "X", "2"].includes(pick_1x2)) throw badRequest("Escolha quem ganha (casa, empate ou fora)");
-  const joker = Boolean(raw.joker);
+  const joker = false; // coringa excluído: o que vier do navegador é ignorado
   // Gols OU placar exato: nunca os dois no mesmo palpite.
   const has = (v: unknown) => v !== undefined && v !== null;
   if (has(raw.pick_ou) && (has(raw.home_goals) || has(raw.away_goals))) throw badRequest("Escolha gols OU placar exato, não os dois");

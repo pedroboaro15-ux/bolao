@@ -8,10 +8,11 @@ const fail = (view, e) => (view.innerHTML = `<div class="page narrow"><div class
 
 // ---------- ranking ----------
 
-const rankOf = (rows, i) => 1 + rows.filter((r) => r.points > rows[i].points || (r.points === rows[i].points && r.hits > rows[i].hits)).length;
+/** Sem desempate: pontuação igual divide a posição (1º, 1º, 3º). */
+const rankOf = (rows, i) => 1 + rows.filter((r) => r.points > rows[i].points).length;
 
 export function renderRanking(view) {
-  const S = { escopo: "geral", id: "", tipo: "pontos", data: null, perRound: null, camps: null, camp: null };
+  const S = { escopo: "geral", id: "", tipo: "pontos", data: null, perRound: null, camps: null, camp: null, completa: false };
   view.innerHTML = `<div class="page narrow"><p class="boot">Carregando ranking…</p></div>`;
 
   async function loadCamp() {
@@ -45,14 +46,33 @@ export function renderRanking(view) {
       ${S.camps.length > 1 ? `<div style="margin-bottom:12px"><select data-sel aria-label="Campeonato">${S.camps.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? "selected" : ""}>${esc(x.name)} · ${x.situacao}</option>`).join("")}</select></div>` : ""}
       <div class="card card-pad" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-family:var(--font-display);font-size:24px">${esc(c.name)}</b><span class="tag ${sit === "em andamento" ? "ok" : ""}">${sit}</span></div>
-        <div class="muted" style="font-size:13px">De ${fmtDate(c.start_date)} a ${fmtDate(c.end_date)} · soma as rodadas e as perguntas do dia desse período</div>
+        <div class="muted" style="font-size:13px">De ${fmtDate(c.start_date)} a ${fmtDate(c.end_date)} · ${c.formato ? `${esc(c.formato)}, ${c.legs === 2 ? "ida e volta" : "só ida"}` : "soma as rodadas e as perguntas extras desse período"}</div>
+        ${c.fee ? `<div style="margin-top:8px"><span class="tag">Competição paga: ${esc(c.fee)}</span> <span class="muted" style="font-size:12px">combinado entre vocês; o app não recebe pagamentos</span></div>` : ""}
         ${c.prize ? `<div style="margin-top:10px"><div style="font-size:12px;font-weight:600;color:var(--ink-3)">PREMIAÇÃO</div><div class="prize">${esc(c.prize)}</div></div>` : ""}
       </div>
-      <div class="card" style="overflow:hidden">${
+      ${S.camp.confrontos ? confrontosBody(S.camp, me) : `<div class="card" style="overflow:hidden">${
         rows.length
           ? `<table class="table"><thead><tr><th>#</th><th>Participante</th><th class="r">Acertos</th><th class="r">Pontos</th></tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.user_id === me ? "me" : ""} ${rankOf(rows, i) === 1 ? "first" : ""}"><td class="pos">${rankOf(rows, i)}</td><td><span class="who">${avatar(r.nickname)}${esc(r.nickname)}${r.user_id === me ? ' <span class="tag">você</span>' : ""}</span></td><td class="r num">${r.hits}</td><td class="pts-cell">${pts(r.points)}</td></tr>`).join("")}</tbody></table>`
           : `<div class="empty">Ainda sem pontos neste campeonato.</div>`
-      }</div></div>`;
+      }</div>`}</div>`;
+  }
+
+  /** Campeonato de confrontos: classificação (reduzida/completa), rodadas e mata-mata. */
+  function confrontosBody(d, me) {
+    const c = d.campeonato;
+    const dot = (r) => `<i class="f5 ${r}" title="${{ V: "Vitória", E: "Empate", D: "Derrota" }[r]}">${r}</i>`;
+    const tabela = (g) => `<div class="card matrix" style="margin-bottom:12px">${d.grupos.length > 1 || c.format !== "pontos" ? `<div class="group-h" style="cursor:default"><b>${esc(g.name)}</b></div>` : ""}<table class="table">
+      <thead><tr><th>#</th><th>Nome</th><th class="r">P</th><th class="r">J</th>${S.completa ? '<th class="r">V</th><th class="r">E</th><th class="r">D</th><th class="r">GP</th><th class="r">GC</th>' : ""}<th class="r">SG</th>${S.completa ? "<th>Últimos 5</th>" : ""}</tr></thead>
+      <tbody>${g.table.map((r) => `<tr class="${r.user_id === me ? "me" : ""} ${r.pos === 1 ? "first" : ""}"><td class="pos">${r.pos}</td><td><span class="who">${avatar(r.nickname)}${esc(r.nickname)}</span></td><td class="pts-cell">${r.P}</td><td class="r num">${r.J}</td>${S.completa ? `<td class="r num">${r.V}</td><td class="r num">${r.E}</td><td class="r num">${r.D}</td><td class="r num">${r.GP}</td><td class="r num">${r.GC}</td>` : ""}<td class="r num">${r.SG > 0 ? "+" : ""}${r.SG}</td>${S.completa ? `<td><span class="last5">${r.last5.map(dot).join("") || '<span class="muted">–</span>'}</span></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+    const placar = (f) => (f.hg == null ? '<span class="muted">x</span>' : `<b>${f.hg}</b> x <b>${f.ag}</b>`);
+    const nome = (n) => (n ? esc(n) : '<span class="muted">a definir</span>');
+    return `
+      ${d.campeao ? `<div class="card card-pad" style="margin-bottom:12px;text-align:center"><div class="muted" style="font-size:12px;font-weight:600">CAMPEÃO</div><div style="font-family:var(--font-display);font-size:32px;font-weight:700">${esc(d.campeao)}</div></div>` : ""}
+      ${d.grupos.length ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><h2 class="section-title" style="margin:0">Classificação</h2><div class="seg" role="group" aria-label="Tipo de tabela"><button data-tab="red" aria-pressed="${!S.completa}">Reduzida</button><button data-tab="comp" aria-pressed="${S.completa}">Completa</button></div></div>${d.grupos.map(tabela).join("")}` : ""}
+      ${d.mata.length ? `<h2 class="section-title">Mata-mata</h2>${d.mata.map((m) => `<div class="card" style="margin-bottom:12px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${esc(m.stage)}</b></div>${m.ties.map((t) => `<div class="list-row"><div class="grow">${nome(t.a_nick)} <span class="muted">x</span> ${nome(t.b_nick)}</div><span class="num">${t.ga == null ? "" : `${t.ga} x ${t.gb}`}</span>${t.winner_nick ? `<span class="tag ok">passa ${esc(t.winner_nick)}${t.decidedBy === "pênaltis" ? " (pênaltis)" : t.decidedBy === "folga" ? " (folga)" : ""}</span>` : ""}</div>`).join("")}</div>`).join("")}` : ""}
+      <h2 class="section-title">Rodadas<small>${d.rodadas.length} de ${d.rodadas_necessarias}</small></h2>
+      ${d.rodadas.map((r) => `<div class="card" style="margin-bottom:10px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${r.n}ª rodada</b><span class="cnt">${esc(r.stage)} · ${r.date ? fmtDate(r.date) : "data a definir"}${r.date && !r.final ? " · em andamento" : ""}</span></div>${r.fixtures.map((f) => `<div class="list-row"><div class="grow" style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center"><span style="text-align:right">${nome(f.home_nick)}</span><span class="num">${placar(f)}</span><span>${nome(f.away_nick)}</span></div>${f.note ? `<span class="tag">${esc(f.note)}</span>` : ""}</div>`).join("")}</div>`).join("")}
+      <p class="muted" style="font-size:12px">Cada dia com rodada é uma rodada do campeonato. Seu lucro do dia vira gols (${c.goal_step ?? 1} ponto${(c.goal_step ?? 1) === 1 ? "" : "s"} = 1 gol). Vitória vale 3, empate 1. Classificação por pontos, vitórias, saldo e gols pró; tudo igual divide a posição.${c.format === "mata" || c.format === "copa" ? " No mata-mata, empate no placar vai para os pênaltis: passa quem teve mais acertos (regra provisória)." : ""}</p>`;
   }
 
   async function load() {
@@ -111,32 +131,11 @@ export function renderRanking(view) {
         : S.escopo === "mes" && d.opcoes.meses.length
           ? `<select data-sel aria-label="Mês">${d.opcoes.meses.map((m) => `<option value="${m}" ${m === S.id ? "selected" : ""}>${esc(fmtMonth(m))}</option>`).join("")}</select>`
           : "";
-    const st = d.streaks ?? [];
-    const rankStreak = (i) => 1 + st.filter((r) => r.current > st[i].current || (r.current === st[i].current && r.best > st[i].best)).length;
-    const topNow = st[0];
-    const topBest = [...st].sort((a, b) => b.best - a.best)[0];
-    const streakBody = `
-      <div class="summary" style="grid-template-columns:repeat(2,1fr)">
-        <div><small>Maior sequência agora</small><b>${topNow && topNow.current > 0 ? `${topNow.current} · ${esc(topNow.nickname)}` : "–"}</b></div>
-        <div><small>Maior recorde</small><b>${topBest && topBest.best > 0 ? `${topBest.best} · ${esc(topBest.nickname)}` : "–"}</b></div>
-      </div>
-      <div class="card" style="overflow:hidden">
-        ${
-          st.length
-            ? `<table class="table"><thead><tr><th>#</th><th>Participante</th><th class="r">Agora</th><th class="r">Recorde</th></tr></thead><tbody>
-              ${st.map((r, i) => `<tr class="${r.user_id === me ? "me" : ""} ${rankStreak(i) === 1 && r.current > 0 ? "first" : ""}"><td class="pos">${rankStreak(i)}</td><td><span class="who">${avatar(r.nickname)}${esc(r.nickname)}${r.user_id === me ? ' <span class="tag">você</span>' : ""}</span></td><td class="pts-cell">${r.current}</td><td class="r num">${r.best}</td></tr>`).join("")}
-            </tbody></table>`
-            : `<div class="empty">Ainda não há jogos com resultado neste período.</div>`
-        }
-      </div>
-      <p class="muted" style="font-size:12px;margin-top:14px">Conta os <b>vencedores (1X2)</b> certos em sequência, jogo a jogo, em ordem de horário. Errar zera a sequência de agora; o recorde fica. Não palpitar conta como erro. Jogo anulado não conta.</p>`;
-    const tipoSeg = `<div style="margin-bottom:12px"><div class="seg" role="group" aria-label="Tipo de ranking"><button data-tipo="pontos" aria-pressed="${S.tipo === "pontos"}">Pontos</button><button data-tipo="sequencia" aria-pressed="${S.tipo === "sequencia"}">Sequência de acertos</button></div></div>`;
     view.innerHTML = `<div class="page narrow">
       <h1 class="section-title">Ranking<small>${esc(S.escopo === "mes" ? fmtMonth(S.id) : d.titulo)}</small></h1>
       <div class="tabs" role="tablist">${[["rodada", "Rodada"], ["mes", "Mês"], ["geral", "Geral"], ["camp", "Campeonato"]].map(([k, t]) => `<button role="tab" data-esc="${k}" aria-selected="${S.escopo === k}">${t}</button>`).join("")}</div>
       ${selector ? `<div style="margin-bottom:12px">${selector}</div>` : ""}
-      ${tipoSeg}
-      ${S.tipo === "sequencia" ? streakBody : `${
+      ${`${
         lead
           ? `<div class="card leader">
               <div class="wm">${esc(lead.nickname)}</div>
@@ -163,15 +162,15 @@ export function renderRanking(view) {
       </div>
       ${perRoundCard()}
       ${rows.length ? `<div class="actions"><a class="btn" target="_blank" rel="noopener" href="${whatsapp(d, rows)}">${icon("share").replace("<svg", '<svg width="16" height="16"')} Compartilhar no WhatsApp</a></div>` : ""}
-      <p class="muted" style="font-size:12px;margin-top:14px">Cada acerto vale o lucro da odd justa (odd − 1). Desempate: mais acertos.${d.updated_at ? ` Atualizado ${fmtWhen(d.updated_at)}.` : ""}</p>`}
+      <p class="muted" style="font-size:12px;margin-top:14px">Cada acerto vale o lucro da odd justa (odd − 1). Pontos iguais dividem a posição.${d.updated_at ? ` Atualizado ${fmtWhen(d.updated_at)}.` : ""}</p>`}
     </div>`;
   }
 
   view.addEventListener("click", (e) => {
-    const tp = e.target.closest("[data-tipo]");
-    if (tp) {
-      S.tipo = tp.dataset.tipo;
-      return S.escopo === "camp" ? paintCamp() : paint();
+    const tb = e.target.closest("[data-tab]");
+    if (tb) {
+      S.completa = tb.dataset.tab === "comp";
+      return paintCamp();
     }
     const b = e.target.closest("[data-esc]");
     if (b) {
@@ -203,7 +202,7 @@ const extraText = (p) => (p.mode === "ou" ? (p.pick_ou === "over" ? "Mais de 2,5
 const pickText = (j, p) => {
   const w = p.pick_1x2 === "1" ? j.home.name : p.pick_1x2 === "2" ? j.away.name : "Empate";
   const x = extraText(p);
-  return `${w}${x ? " · " + x : ""}${p.joker ? " · ★" : ""}`;
+  return `${w}${x ? " · " + x : ""}`;
 };
 
 export async function renderMine(view) {
@@ -280,7 +279,7 @@ export async function renderMatch(view, id) {
   const label = (p) => {
     const w = p.pick_1x2 === "1" ? j.home.name : p.pick_1x2 === "2" ? j.away.name : "Empate";
     const x = extraText(p);
-    return `<b>${esc(w)}</b><br><span class="muted">${esc(x || "só o vencedor")}${p.joker ? " · ★ coringa" : ""}</span>`;
+    return `<b>${esc(w)}</b><br><span class="muted">${esc(x || "só o vencedor")}</span>`;
   };
   view.innerHTML = `<div class="page narrow">
     <p><a data-link href="/" class="muted">‹ Voltar à rodada</a></p>
@@ -289,7 +288,7 @@ export async function renderMatch(view, id) {
       <div class="muted" style="display:flex;justify-content:center;gap:8px;align-items:center;margin-bottom:12px">${leagueIcon(j.league)} ${esc(j.league.name)} · ${fmtWhen(j.kickoff_utc)}</div>
       <div class="row">
         <button class="team col" data-team="home">${crest(j.home, "xl")}<span class="tn">${esc(j.home.name)}</span></button>
-        <div>${done ? `<div class="final">${j.home_goals} - ${j.away_goals}</div><span class="tag ${j.voided ? "" : "ok"}">${j.voided ? "Anulado" : "Final"}</span>` : j.live ? `<div class="final">${j.live.home ?? 0} - ${j.live.away ?? 0}</div><span class="tag live">${esc(liveLabel(j.live))}</span>` : `<div class="final" style="font-size:38px">${j.locked ? "x" : "vs"}</div>${j.locked ? '<span class="tag live">Em andamento</span>' : ""}`}</div>
+        <div>${done ? `<div class="final">${j.home_goals} - ${j.away_goals}</div><span class="tag ${j.voided ? "" : "ok"}">${j.voided ? "Excluído da rodada" : "Final"}</span>` : j.live ? `<div class="final">${j.live.home ?? 0} - ${j.live.away ?? 0}</div><span class="tag live">${esc(liveLabel(j.live))}</span>` : `<div class="final" style="font-size:38px">${j.locked ? "x" : "vs"}</div>${j.locked ? '<span class="tag live">Em andamento</span>' : ""}`}</div>
         <button class="team col" data-team="away">${crest(j.away, "xl")}<span class="tn">${esc(j.away.name)}</span></button>
       </div>
       ${j.odds_1x2 ? `<div class="statgrid" style="margin-top:16px"><div class="stat"><div class="l">${j.locked ? "Odd justa · " : ""}Casa</div><div class="v">${odd(j.odds_1x2["1"])}</div></div><div class="stat dark"><div class="l">Empate</div><div class="v">${odd(j.odds_1x2.X)}</div></div><div class="stat"><div class="l">Fora</div><div class="v">${odd(j.odds_1x2["2"])}</div></div></div>` : ""}

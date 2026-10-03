@@ -49,6 +49,7 @@ Nada disso vai para o git. Cada comando pede o valor no terminal:
 npx wrangler secret put SUPABASE_SERVICE_KEY   # a secret key do Supabase
 npx wrangler secret put SESSION_SECRET         # um texto aleatório; gere com o comando abaixo
 npx wrangler secret put API_FOOTBALL_KEY       # dashboard.api-football.com → My Access
+npx wrangler secret put ODDS_API_KEY          # the-odds-api.com (grátis, 500/mês): fonte principal das odds 1X2
 ```
 Para gerar o `SESSION_SECRET`:
 ```bash

@@ -77,6 +77,8 @@ export interface Match {
 
 export type RoundStatus = "draft" | "open" | "closed" | "finished";
 
+export type RoundRequired = "winner" | "winner_goals";
+
 export interface Round {
   title: string;
   /** AAAA-MM-DD (dia em Brasília). */
@@ -84,6 +86,8 @@ export interface Round {
   status: RoundStatus;
   created_at: Date;
   match_ids: string[];
+  /** O que é obrigatório palpitar em cada jogo: só o vencedor, ou vencedor + gols (mais/menos de 2,5 ou placar exato). */
+  required?: RoundRequired;
   reminder_sent?: boolean;
   finished_notified?: boolean;
 }

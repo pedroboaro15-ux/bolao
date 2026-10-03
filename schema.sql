@@ -26,10 +26,13 @@ create table if not exists rounds (
   status             text not null default 'draft' check (status in ('draft', 'open', 'closed', 'finished')),
   created_at         timestamptz not null default now(),
   match_ids          jsonb not null default '[]'::jsonb,
+  required           text not null default 'winner' check (required in ('winner', 'winner_goals')),
   reminder_sent      boolean,
   finished_notified  boolean,
   version            bigint not null default 1
 );
+-- Bancos criados antes do "obrigatório por rodada":
+alter table rounds add column if not exists required text not null default 'winner';
 create index if not exists rounds_date_idx on rounds (date);
 create index if not exists rounds_status_idx on rounds (status);
 
@@ -303,9 +306,24 @@ create table if not exists championships (
   start_date  text not null,
   end_date    text not null,
   prize       text,
+  fee         text,                          -- competição paga (opcional): valor combinado entre os participantes; o app só mostra
+  format      text,                          -- confrontos: pontos | grupos | mata | copa (vazio = ranking de pontos)
+  legs        integer,                       -- 1 = só ida, 2 = ida e volta
+  groups      integer,
+  advance     integer,
+  goal_step   double precision,              -- quantos pontos de lucro valem 1 gol
+  participants jsonb,
   created_at  timestamptz not null default now(),
   version     bigint not null default 1
 );
+alter table championships add column if not exists fee text;
+-- Campeonato de confrontos 1×1 (vazio = ranking de pontos, como antes)
+alter table championships add column if not exists format text;            -- pontos | grupos | mata | copa
+alter table championships add column if not exists legs integer;           -- 1 = só ida, 2 = ida e volta
+alter table championships add column if not exists groups integer;        -- quantos grupos (grupos e copa)
+alter table championships add column if not exists advance integer;       -- quantos de cada grupo passam (copa)
+alter table championships add column if not exists goal_step double precision; -- quantos pontos de lucro valem 1 gol
+alter table championships add column if not exists participants jsonb;    -- ids na ordem de entrada (cabeça de chave)
 
 -- Vagas dos limites (cadastro: 2 por minuto; login: 5 tentativas por conta). O cron apaga as antigas.
 create table if not exists rate_limits (

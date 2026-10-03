@@ -27,11 +27,11 @@ describe("relevância", () => {
 describe("configurações", () => {
   it("campos ausentes voltam ao padrão", () => {
     expect(mergeSettings({ oddCap: 80 }).oddCap).toBe(80);
-    expect(mergeSettings(null).jokerMultiplier).toBe(2);
+    expect(mergeSettings(null)).not.toHaveProperty("jokerMultiplier");
   });
 
   it("valida o que o admin envia", () => {
-    expect(parseSettingsPatch({ oddCap: 100, jokerEnabled: false })).toEqual({ oddCap: 100, jokerEnabled: false });
+    expect(parseSettingsPatch({ oddCap: 100, jokerEnabled: false })).toEqual({ oddCap: 100 }); // coringa não existe mais
     expect(() => parseSettingsPatch({ oddCap: -1 })).toThrow();
     expect(() => parseSettingsPatch({ oddCap: 1 })).toThrow();
     expect(() => parseSettingsPatch({ leagueWeights: { abc: 3 } })).toThrow();
