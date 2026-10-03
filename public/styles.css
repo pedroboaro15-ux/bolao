@@ -439,13 +439,6 @@ input, select, textarea { font-size: 16px; }
 .hs-hero .hs-kicker { color: #8ca0ff; }
 .hs-hero h1 { margin: 10px auto 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(44px, 12vw, 72px); line-height: .95; letter-spacing: -.01em; }
 .hs-hero p { margin: 14px auto 0; font-size: 16px; line-height: 1.5; color: #bdbdbd; }
-.hs-score { margin-top: 22px !important; display: grid; grid-template-columns: 1fr auto auto auto 1fr; align-items: center; gap: 10px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 14px 12px 10px; }
-.hs-score b { font-family: var(--font-display); font-weight: 700; font-size: 44px; line-height: 1; }
-.hs-score img { display: block; }
-.hs-sc-t { font-family: var(--font-display); font-weight: 700; font-size: 20px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.hs-sc-t:last-of-type { justify-content: flex-end; }
-.hs-sc-t i { width: 12px; height: 12px; border-radius: 50%; flex: none; }
-.hs-score small { grid-column: 1 / -1; text-align: center; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8ca0ff; }
 .hs-body { max-width: 720px; margin: -44px auto 0; padding: 0 12px calc(32px + env(safe-area-inset-bottom)); position: relative; }
 .hs-sum { margin-bottom: 12px; }
 .hs-game { overflow: hidden; }
@@ -456,7 +449,9 @@ input, select, textarea { font-size: 16px; }
 .hs-open { font-weight: 600; color: var(--brand-text); }
 .hs-teams { display: grid; gap: 6px; font-family: var(--font-display); font-size: 17px; font-weight: 600; }
 .hs-teams span { display: flex; align-items: center; gap: 8px; }
-.hs-teams i { width: 18px; height: 20px; clip-path: path("M9 0 18 2.5v7c0 5-3.6 8.8-9 10.5C3.6 18.3 0 14.5 0 9.5v-7z"); display: inline-block; }
+.hs-teams b { margin-left: auto; font-size: 26px; font-weight: 700; line-height: 1; }
+.hs-crest { width: 22px; height: 26px; flex: none; }
+.hs-flip { transform: rotate(180deg); }
 .hs-game .hint b { color: var(--brand-text); }
 .hs-ctas { display: grid; gap: 8px; margin-top: 16px; }
 .hs-list { margin: 16px 0; padding: 4px 16px; }

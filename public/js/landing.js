@@ -30,12 +30,6 @@ export function renderLanding(view) {
       <div class="hs-kicker">Bolão entre amigos · de graça</div>
       <h1>Palpite nos jogos do dia e prove no ranking.</h1>
       <p>Quem entende mais de futebol? Escolha quem ganha, cada acerto vale o lucro da odd, e o ranking não deixa ninguém mentir.</p>
-      <div class="hs-score" aria-label="Exemplo: Grêmio 10 x 0 Inter, final">
-        <span class="hs-sc-t"><i style="background:#0d80bf"></i>Grêmio</span>
-        <b>10</b><img src="/icons/soccerball.svg" alt="" width="34" height="34"><b>0</b>
-        <span class="hs-sc-t">Inter<i style="background:#e30613"></i></span>
-        <small>Final · exemplo</small>
-      </div>
     </section>
 
     <div class="hs-body">
@@ -48,8 +42,8 @@ export function renderLanding(view) {
       <div class="card hs-game">
         <div class="hs-game-h"><b>Brasileirão Série A</b><span class="muted">exemplo</span></div>
         <div class="hs-game-b">
-          <div class="hs-row muted"><span>Hoje · 16:00</span><span class="hs-open">Aberto</span></div>
-          <div class="hs-teams"><span><i style="background:#b5121b"></i>Time da casa</span><span><i style="background:#1d6b3a"></i>Time de fora</span></div>
+          <div class="hs-row muted"><span>Final · 90 min</span><span class="hs-open">Encerrado</span></div>
+          <div class="hs-teams"><span><svg class="hs-crest" viewBox="0 0 24 28" aria-hidden="true"><clipPath id="cg"><path d="M12 1 23 4v9c0 7-4.6 11.8-11 14C5.6 24.8 1 20 1 13V4z"/></clipPath><g clip-path="url(#cg)"><rect width="24" height="28" fill="#0d80bf"/><rect x="6" width="4" height="28" fill="#111"/><rect x="10" width="4" height="28" fill="#fff"/><rect x="14" width="4" height="28" fill="#111"/></g><path d="M12 1 23 4v9c0 7-4.6 11.8-11 14C5.6 24.8 1 20 1 13V4z" fill="none" stroke="#fff" stroke-width="1.2"/></svg>Grêmio<b>10</b></span><span><svg class="hs-crest hs-flip" viewBox="0 0 24 28" aria-hidden="true"><path d="M12 1 23 4v9c0 7-4.6 11.8-11 14C5.6 24.8 1 20 1 13V4z" fill="#ff5fa8" stroke="#fff" stroke-width="1.2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M5 20h14" stroke="#fff" stroke-width="1.6"/></svg>Inter<b>0</b></span></div>
           <div class="hs-row muted"><span>Vencedor · toque para testar</span><span>odd justa</span></div>
           <div class="odds c3">${["1", "X", "2"].map((k) => `<button class="odd" data-k="${k}" aria-pressed="${k === S.pick}" aria-label="${LABEL[k]}, odd ${ODDS[k].toFixed(2)}"><span>${k}</span><b>${ODDS[k].toFixed(2)}</b></button>`).join("")}</div>
           <div class="hint" data-gain></div>

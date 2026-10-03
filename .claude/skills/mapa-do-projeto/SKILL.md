@@ -56,7 +56,7 @@ Sem pagamento no site: dinheiro, quando houver, é combinado entre eles.
 | Banco (cliente REST, memória p/ testes) | `src/db/supabase.ts`, `memory.ts`, `repo.ts` |
 | Modo demonstração (dados de mentira) | `src/dev.ts` (`DEV_MEMORY=1`, só localhost) |
 | Telas | `public/js/round.js` (rodada), `ranking.js` (ranking, campeonato, detalhe do jogo, comentários), `admin.js`, `landing.js` (página de entrada + Como funciona), `questions.js`, `pedidos.js` |
-| Visual | `public/styles.css` (tokens claro/escuro, Saira Condensed + IBM Plex Sans) · ícones `public/icons/` (bola estilo Trionda própria) |
+| Visual | `public/styles.css` (tokens claro/escuro, Saira Condensed + IBM Plex Sans) · ícones `public/icons/` (bola clássica preta e branca, domínio público) |
 | Tabelas | `schema.sql` (sempre idempotente: `create ... if not exists` + `alter ... add column if not exists`) |
 | Testes | `test/*.test.ts` (Vitest; `test/schema.test.ts` falha se o app gravar campo sem coluna) |
 
