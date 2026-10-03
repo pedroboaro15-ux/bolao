@@ -450,7 +450,7 @@ input, select, textarea { font-size: 16px; }
 .hs-teams { display: grid; gap: 6px; font-family: var(--font-display); font-size: 17px; font-weight: 600; }
 .hs-teams span { display: flex; align-items: center; gap: 8px; }
 .hs-teams b { margin-left: auto; font-size: 26px; font-weight: 700; line-height: 1; }
-.hs-crest { width: 22px; height: 26px; flex: none; }
+.hs-crest { width: 34px; height: 34px; flex: none; object-fit: contain; }
 .hs-flip { transform: rotate(180deg); }
 .hs-game .hint b { color: var(--brand-text); }
 .hs-ctas { display: grid; gap: 8px; margin-top: 16px; }
