@@ -394,3 +394,6 @@ input, select, textarea { font-size: 16px; }
 .cmt .who { font-weight: 600; }
 .prize { white-space: pre-line; }
 .linkish { background: none; border: 0; padding: 0; color: var(--brand-text); font: inherit; text-decoration: underline; cursor: pointer; }
+/* área de toque mínima no celular para links pequenos (apagar comentário, voltar) */
+.linkish { min-height: 44px; min-width: 44px; padding: 0 6px; }
+.page > p > a[data-link] { display: inline-flex; align-items: center; min-height: 44px; }
