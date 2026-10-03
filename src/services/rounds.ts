@@ -4,7 +4,7 @@ import { ConflictError, type Write } from "../db/types";
 import type { Settings } from "../lib/settings";
 import { badRequest, conflict } from "../lib/errors";
 import { buildOdds } from "../lib/odds";
-import { isBrazil, relevanceScore } from "../lib/relevance";
+import { isBrSerie, relevanceScore } from "../lib/relevance";
 import { addDays, bolaoWindow } from "../lib/dates";
 import { ApiFootball, QuotaError } from "./apifootball";
 
@@ -31,8 +31,8 @@ async function calendarFixtures(repo: Repo, api: ApiFootball, settings: Settings
     .filter((f) => !["CANC", "PST", "ABD"].includes(f.status))
     .map((f) => ({ id: f.id, kickoff: f.kickoff, status: f.status, league: f.league, home: f.home, away: f.away, relevance: relevanceScore(f, settings) }))
     .sort((a, b) => b.relevance - a.relevance || a.kickoff.getTime() - b.kickoff.getTime());
-  // Os 150 mais relevantes do mundo + TODOS os do Brasil (Série B, C, D, estaduais), que nunca podem sumir da lista.
-  const kept = fixtures.filter((f, i) => i < MAX_CACHED || isBrazil(f));
+  // Os 150 mais relevantes + TODOS os jogos das Séries A, B, C e D (que já vêm no topo pela relevância).
+  const kept = fixtures.filter((f, i) => i < MAX_CACHED || isBrSerie(f));
   const doc = { date, fetched_at: new Date(), total: fixtures.length, fixtures: kept };
   await repo.db.commit([{ op: "set", path: `fixtures_cache/${date}`, data: doc }]);
   return doc;

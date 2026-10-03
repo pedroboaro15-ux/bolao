@@ -100,7 +100,7 @@ async function daily(body) {
       <div class="card card-pad form" style="margin-bottom:14px">
         <div class="cols2">
           <label class="f">Dia<input type="date" data-date value="${S.date}"></label>
-          <label class="f">Campeonato<select data-liga><option value="0">Todos (mais relevantes)</option><option value="br" ${S.liga === "br" ? "selected" : ""}>Só Brasil (${d.brasil ?? 0})</option>${d.ligas.map((l) => `<option value="${l.id}" ${l.id === S.liga ? "selected" : ""}>${l.country === "Brazil" ? "BR · " : ""}${esc(l.name)} (${l.count})</option>`).join("")}</select></label>
+          <label class="f">Campeonato<select data-liga><option value="0">Todos (mais relevantes)</option><option value="br" ${S.liga === "br" ? "selected" : ""}>Brasileirão: Séries A, B, C e D (${d.brasil ?? 0})</option>${d.ligas.map((l) => `<option value="${l.id}" ${l.id === S.liga ? "selected" : ""}>${l.country === "Brazil" && [71, 72, 75, 76].includes(l.id) ? "BR · " : ""}${esc(l.name)} (${l.count})</option>`).join("")}</select></label>
         </div>
         <div class="notice">Dia do bolão: das <b>06:00 de ${fmtDate(S.date)}</b> até as <b>06:00 de ${fmtDate(nextDay(S.date))}</b> (horário de São Paulo). Limite de <b>${d.limite}</b> jogos por dia; já escolhidos: <b>${d.ja_escolhidos}</b>.</div>
         <div class="muted" style="font-size:13px">${d.total} jogos ainda por começar${d.comecados ? ` (${d.comecados} já começaram e saíram da lista)` : ""} · lista de ${fmtWhen(d.fetched_at)} · mostrando os 30 mais relevantes. <button class="btn small" data-refresh>${icon("refresh").replace("<svg", '<svg width="14" height="14"')} Buscar de novo (gasta 2 chamadas)</button></div>

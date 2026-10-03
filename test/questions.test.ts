@@ -108,19 +108,20 @@ describe("perguntas do dia: fluxo completo", () => {
   });
 });
 
-describe("foco no Brasil", () => {
+describe("foco no Brasileirão (Séries A a D)", () => {
   const f = (id: number, country: string) => ({ league: { id, country }, home: { name: "Time A" }, away: { name: "Time B" } });
-  it("Série B e C ficam acima de ligas comuns de fora", () => {
-    const serieB = relevanceScore(f(72, "Brazil"), DEFAULT_SETTINGS);
-    const serieC = relevanceScore(f(75, "Brazil"), DEFAULT_SETTINGS);
-    const estadual = relevanceScore(f(999, "Brazil"), DEFAULT_SETTINGS);
-    const fora = relevanceScore(f(998, "Norway"), DEFAULT_SETTINGS);
-    expect(serieB).toBeGreaterThan(serieC);
-    expect(serieC).toBeGreaterThan(fora);
-    expect(estadual).toBeGreaterThan(fora);
+  it("Série A, B, C e D ficam no topo, nessa ordem, acima até da Champions", () => {
+    const [a, b, c, d] = [71, 72, 75, 76].map((id) => relevanceScore(f(id, "Brazil"), DEFAULT_SETTINGS));
+    const champions = relevanceScore({ ...f(2, "World"), home: { name: "Real Madrid" }, away: { name: "Barcelona" } }, DEFAULT_SETTINGS);
+    expect(a).toBeGreaterThan(b);
+    expect(b).toBeGreaterThan(c);
+    expect(c).toBeGreaterThan(d);
+    expect(d).toBeGreaterThan(champions);
   });
-  it("vale mesmo com pesos de liga antigos salvos (o bônus do Brasil é separado)", () => {
-    const s = { ...DEFAULT_SETTINGS, leagueWeights: { "71": 90 } };
-    expect(relevanceScore(f(72, "Brazil"), s)).toBeGreaterThan(relevanceScore(f(500, "Norway"), s));
+  it("o resto do Brasil (estadual, sub-20, feminino) não ganha nada a mais", () => {
+    expect(relevanceScore(f(475, "Brazil"), DEFAULT_SETTINGS)).toBe(relevanceScore(f(998, "Norway"), DEFAULT_SETTINGS));
+  });
+  it("vale mesmo com pesos de liga antigos salvos", () => {
+    expect(relevanceScore(f(76, "Brazil"), { ...DEFAULT_SETTINGS, leagueWeights: { "2": 100 } })).toBeGreaterThan(100);
   });
 });

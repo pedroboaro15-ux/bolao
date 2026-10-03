@@ -20,8 +20,6 @@ export interface Settings {
   bigTeams: string[];
   bigTeamBonus: number;
   derbyBonus: number;
-  /** Bônus para todo jogo de campeonato brasileiro (Séries A a D, Copa do Brasil, estaduais...). */
-  brazilBonus: number;
   /** Máximo de jogos escolhidos por dia do bolão (06:00 → 06:00 em São Paulo), somando todas as rodadas do dia. */
   maxMatchesPerDay: number;
   apiFootballDailyLimit: number;
@@ -52,10 +50,6 @@ export const DEFAULT_SETTINGS: Settings = {
     "39": 90,
     "140": 90,
     "71": 90,
-    // Brasil: Série B, Série C e Série D (somam o bônus do Brasil)
-    "72": 60,
-    "75": 45,
-    "76": 30,
     "135": 90,
     "78": 90,
     // 80: Ligue 1, Copa do Brasil, Sul-Americana, Europa League
@@ -65,7 +59,6 @@ export const DEFAULT_SETTINGS: Settings = {
     "3": 80,
   },
   defaultLeagueWeight: 40,
-  brazilBonus: 40,
   bigTeams: [
     "flamengo", "palmeiras", "corinthians", "sao paulo", "santos", "fluminense", "vasco da gama", "botafogo",
     "gremio", "internacional", "atletico-mg", "cruzeiro", "real madrid", "barcelona", "atletico madrid",
@@ -85,7 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const NUMERIC: (keyof Settings)[] = [
   "winnerMultiplier", "ouMultiplier", "csMultiplier", "jokerMultiplier", "oddCap", "defaultLeagueWeight",
-  "bigTeamBonus", "derbyBonus", "brazilBonus", "maxMatchesPerDay", "apiFootballDailyLimit", "apiReserve", "oddsWindowHours", "oddsRefreshHours",
+  "bigTeamBonus", "derbyBonus", "maxMatchesPerDay", "apiFootballDailyLimit", "apiReserve", "oddsWindowHours", "oddsRefreshHours",
 ];
 
 /** Configuração salva + padrões (campos ausentes voltam ao padrão). */
