@@ -1,0 +1,10 @@
+# Copie para .dev.vars (não vai para o git). Usado pelo `npm run dev` e pelo `npm run seed:admin`.
+
+# Modo demonstração: banco em memória + login falso, sem precisar do Supabase (só vale em localhost).
+# Apague esta linha quando for usar o Supabase de verdade.
+DEV_MEMORY=1
+
+SUPABASE_SERVICE_KEY=
+SESSION_SECRET=
+API_FOOTBALL_KEY=
+VAPID_PRIVATE_KEY=

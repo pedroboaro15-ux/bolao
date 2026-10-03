@@ -79,6 +79,7 @@ export class SupabaseDb implements Db {
   constructor(
     url: string,
     private key: string,
+    // Não guardar o `fetch` global direto: no Cloudflare ele quebra ("Illegal invocation") quando chamado como método do objeto.
     private fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.base = `${url.replace(/\/+$/, "")}/rest/v1`;

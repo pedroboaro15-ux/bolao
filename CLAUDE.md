@@ -100,6 +100,7 @@ Senhas, unicidade de e-mail e recuperação de senha ficam com o Supabase Auth; 
 - "Esqueci a senha": `POST /api/senha/esqueci` → `/auth/v1/recover` (resposta igual exista o e-mail ou não). O link do e-mail volta ao site
   (Site URL do Supabase) com `#access_token=…&type=recovery`; a tela de senha nova manda o token para `POST /api/senha/nova`,
   que troca a senha em `PUT /auth/v1/user` com o token do link.
+- **Limites rígidos** (no banco, não na memória do Worker, que não é compartilhada entre execuções): cadastro **2 por minuto** no site todo; login **5 tentativas erradas por conta a cada 15 minutos** (acertar zera a contagem; a 6ª tentativa já cai em "bloqueado por N minutos"); "esqueci a senha" 3 por hora por e-mail. Cada vaga é uma linha `rate_limits/{chave}:{janela}:{n}` criada com "só se não existir", então duas pessoas ao mesmo tempo nunca pegam a mesma vaga. Padrões mudam com as vars `LIMIT_SIGNUP_PER_MIN` e `LIMIT_LOGIN_FAILS` no `wrangler.toml`. Cadastro com dados inválidos não gasta vaga.
 - Papéis: `admin` e `player`, guardados em `users.role`. O Worker lê o usuário a cada 30 s por isolate (cache curto), então
   promover/remover vale quase na hora.
 - O primeiro admin é criado por `npm run seed:admin` (cria o usuário no Auth e grava a linha em `users` com `role: admin`).
@@ -107,10 +108,11 @@ Senhas, unicidade de e-mail e recuperação de senha ficam com o Supabase Auth; 
 ## Banco (Supabase / Postgres)
 Tabelas em `schema.sql`. Datas em `timestamptz` (UTC). O "id" de cada linha é texto.
 ```text
-users          id (= id do Supabase Auth), name, nickname, email (único), phone, role('admin'|'player'), created_at
+users          id (= id do Supabase Auth), name, nickname, email (único), phone, role('admin'|'player'), edits[jsonb], created_at
 rounds         id (AAAA-MM-DD do dia do bolão), title, date, status('draft'|'open'|'closed'|'finished'), created_at, match_ids[jsonb]
 matches        id, round_id, api_fixture_id, league/home/away[jsonb], kickoff_utc, status, home_goals, away_goals,
-               manual_override, voided, relevance, odds[jsonb] (ao vivo), frozen_odds[jsonb] (congeladas), extras_frozen[jsonb]
+               manual_override, voided, relevance, odds[jsonb] (ao vivo), frozen_odds[jsonb] (congeladas), extras_frozen[jsonb],
+               live[jsonb] (placar ao vivo: home, away, status, elapsed, at)
 predictions    id ({matchId}_{userId}), user_id, match_id, round_id, pick_1x2('1'|'X'|'2'), mode('ou'|'cs'|null),
                pick_ou, home_goals, away_goals, joker, points, hits, parts[jsonb], created_at, updated_at
                -- a tabela tem uma restrição: gols OU placar exato, nunca os dois
@@ -120,6 +122,9 @@ api_usage      id ({AAAA-MM-DD}_{provedor}), date, provider, calls   -- incremen
 push_subs      id (sha256 do endpoint), user_id, endpoint, p256dh, auth, created_at
 fixtures_cache id (AAAA-MM-DD), data[jsonb]   -- jogos do dia do calendário com a relevância
 team_cache     id (id do time), data[jsonb]   -- últimos 5 e próximos 3 jogos (validade ~12 h)
+rate_limits    id ({chave}:{janela}:{n}), created_at   -- vagas dos limites de cadastro e login (o cron apaga as antigas)
+questions      id, date, kind('pergunta'|'basquete'|'ufc'), title, options[jsonb {id,label,odd}], closes_at, result, voided, created_at
+answers        id ({questionId}_{userId}), question_id, user_id, date, option_id, points, hits, created_at, updated_at
 ```
 Mercados: `1X2`, `OU25` (`over`,`under`) e `CS` (`2-1` etc.). A odd bruta e a justa ficam dentro do jogo:
 `odds = { "1X2": { source, fetched_at, raw: {"1": 2.10, "X": 3.40, "2": 3.60}, fair: {…} }, "OU25": {…}, "CS": {…}, model: {lh, la} }`.
@@ -225,6 +230,14 @@ Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da ma
 - **API-Football grátis:** ~10 chamadas por minuto além das 100/dia. Ao criar a rodada só as 4 primeiras odds são buscadas na hora (com pausa
   entre chamadas); o cron horário completa o resto. As odds automáticas param quando sobra só a reserva (padrão 25 chamadas, para placares).
   O plano grátis pode restringir temporadas/datas: `Admin → APIs → Testar` mostra o erro real da API.
+- **Odds e o limite de 10 ms de CPU do Workers grátis:** a resposta da API com todas as casas passa de 190 KB, e só lê-la e calcular o modelo estourava o limite (as odds nunca chegavam). Agora cada pedido pede **uma casa só** (Pinnacle, ~6 KB; se ela não tiver o jogo, Bet365), o placar exato vem do Poisson quando a casa não traz o mercado, e a busca do Poisson usa grades cada vez mais finas (~350 avaliações em vez de ~2.500). Cada execução processa **1 jogo** de odds (cron horário e cron de 15 min). Ao criar a rodada, a tela do admin busca as odds jogo a jogo (um pedido por jogo, ~6,5 s entre eles) e mostra o erro real se algum falhar.
+- **Placar ao vivo:** quando alguém abre a rodada e há jogo em andamento, o Worker faz **uma chamada** à API-Football (`/fixtures?ids=a-b-c`, todos os jogos da rodada) e grava `matches.live`. Reservada no banco antes de chamar: no máximo **1 chamada a cada 5 minutos por rodada**, não importa quantas pessoas olhem; respeita a reserva de chamadas dos placares finais. Em horário de jogo gasta no máximo ~12 chamadas por hora. A tela atualiza a cada 1 min enquanto há jogo rolando. O **resultado oficial** (pontos) continua só do cron, `score.fulltime`.
+- **Odds congelam:** a tela avisa no topo ("congelam no início da partida"), em cada jogo ("odd justa · congela às 20:13") e depois do início ("odd congelada no início").
+- **Ganho por rodada:** `GET /api/ranking/rodadas` junta os rankings já materializados das últimas 10 rodadas (uma tabela participante × rodada no Ranking; em "Meus palpites" cada rodada mostra o ganho dela).
+- **Perfil:** apelido, telefone e senha podem ser alterados **uma vez cada** pela própria pessoa (`users.edits`); depois só o admin (Admin → Usuários → Editar, com "Liberar nova alteração"). Trocar a senha confere a senha atual (conta como tentativa de login) e usa a API de administração do Auth. O ranking mostra sempre o apelido de agora. Apelidos são únicos (sem maiúsculas/acentos).
+- **Foco no Brasil:** a API traz mais de mil jogos por dia; o cache guarda os 150 mais relevantes **e todos os do Brasil**. Todo jogo de campeonato brasileiro ganha `brazilBonus` (padrão 40, separado dos pesos de liga, então vale mesmo com pesos antigos salvos), e a Série B/C/D têm peso próprio (72 = 60, 75 = 45, 76 = 30). A relevância é recalculada ao ler o cache. No admin, o filtro "Só Brasil" mostra até 80 jogos brasileiros.
+- **Perguntas do dia** (`questions`, `answers`): eventos com odds digitadas pelo admin, do tipo `pergunta` (ex.: eleição), `basquete` ou `ufc` (outros esportes depois). Uma opção por pessoa até `closes_at` (hora do servidor); as escolhas dos outros só aparecem depois de fechar. Acerto vale `odd − 1` (as odds digitadas já são as que valem). Dar o resultado fecha a pergunta e grava `standings/questions_{dia}` com scope "round", que entra sozinho no ranking do mês e no geral (não no ranking de uma rodada de jogos). Admin → Perguntas do dia: criar (opções "Nome = odd", uma por linha), editar (não apaga opção já escolhida), "Deu esta", anular, excluir. Na tela de início a seção fica acima dos jogos.
+- **Limites sem a tabela:** se a tabela `rate_limits` ainda não existir (schema.sql não rodado), o limite libera e registra o erro em vez de travar o login.
 - **Placar:** vale o placar dos 90 minutos (`score.fulltime`), que é o que os mercados 1X2, O/U e placar exato liquidam.
 - **Odds do placar exato:** mercado sem margem quando a API traz esse placar; senão Poisson ajustado ao 1X2 (+ O/U), com teto configurável (150).
 - **Acertos (desempate):** vencedor e extra contam 1 cada; placar exato conta 1 (substitui o vencedor).

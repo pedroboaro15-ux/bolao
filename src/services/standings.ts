@@ -67,6 +67,11 @@ export async function rebuildStandings(
     { op: "set", path: `standings/round_${roundId}`, data: { scope: "round", month, rows, zebra, seq, start, streaks: streakRows([{ start, seq }], nick), updated_at: now } satisfies Standings },
   ]);
 
+  await rebuildTotals(repo, month, nick, now);
+}
+
+/** Ranking do mês e geral: somam todos os documentos de scope "round" (rodadas de jogos e perguntas do dia). */
+export async function rebuildTotals(repo: Repo, month: string, nick: Map<string, string>, now = new Date()): Promise<void> {
   const monthRounds = await repo.roundStandings(month);
   const allRounds = await repo.roundStandings();
   await repo.db.commit([

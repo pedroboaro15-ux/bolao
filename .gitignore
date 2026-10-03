@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+*service-account*.json
+.claude/settings.local.json
+
+# gerado por `npm run build:demo`
+demo/bolao-demo.html

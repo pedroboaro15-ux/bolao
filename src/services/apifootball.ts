@@ -18,6 +18,8 @@ export interface FixtureView {
   /** Placar em 90 minutos (é o que vale para 1X2, O/U e placar exato). */
   home_goals: number | null;
   away_goals: number | null;
+  /** Minuto de jogo (só em jogos em andamento). */
+  elapsed: number | null;
 }
 
 export const FINISHED = new Set(["FT", "AET", "PEN"]);
@@ -35,6 +37,7 @@ export function parseFixture(f: any): FixtureView {
     away: { id: f.teams.away.id, name: f.teams.away.name, logo: f.teams.away.logo },
     home_goals: useFt ? ft.home : (f.goals?.home ?? null),
     away_goals: useFt ? ft.away : (f.goals?.away ?? null),
+    elapsed: f.fixture.status?.elapsed ?? null,
   };
 }
 
@@ -170,9 +173,9 @@ export class ApiFootball {
   }
 
   /** Até 20 ids por chamada. */
-  async fixturesByIds(ids: number[]): Promise<FixtureView[]> {
+  async fixturesByIds(ids: number[], opts: { keepReserve?: boolean } = {}): Promise<FixtureView[]> {
     if (ids.length === 0) return [];
-    const rows = await this.call("/fixtures", { ids: ids.slice(0, 20).join("-") });
+    const rows = await this.call("/fixtures", { ids: ids.slice(0, 20).join("-") }, opts);
     return rows.map(parseFixture);
   }
 

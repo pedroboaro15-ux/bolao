@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SignJWT } from "jose";
-import { parseOdds } from "../src/services/apifootball";
+import { ApiFootball, parseOdds } from "../src/services/apifootball";
+import { MemoryDb } from "../src/db/memory";
+import { Repo } from "../src/db/repo";
 import { buildOdds } from "../src/lib/odds";
 import { SupabaseAuth, signSession, verifySessionToken } from "../src/auth/provider";
 import { roundRows, sortRows, sumRows } from "../src/services/standings";
@@ -196,6 +198,41 @@ describe("agenda de atualização das odds", () => {
     expect(needsOdds(at(1, odds(45)), DEFAULT_SETTINGS, now)).toBe(true);
     expect(needsOdds(at(1, odds(10)), DEFAULT_SETTINGS, now)).toBe(false);
     expect(needsOdds(at(-0.1, odds(999)), DEFAULT_SETTINGS, now)).toBe(false);
+  });
+});
+
+describe("pedido de odds à API-Football", () => {
+  const original = globalThis.fetch;
+  const resposta = (bookmakers: unknown[]) => new Response(JSON.stringify({ errors: [], response: bookmakers.length ? [{ bookmakers }] : [] }), { status: 200 });
+  const montar = (respostas: Response[]) => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string) => {
+      urls.push(String(input));
+      return respostas.shift()!;
+    }) as unknown as typeof fetch;
+    return { urls, api: new ApiFootball({ API_FOOTBALL_KEY: "k" } as any, new Repo(new MemoryDb()), DEFAULT_SETTINGS) };
+  };
+
+  it("pede só a Pinnacle (resposta pequena) e para quando ela traz o 1X2", async () => {
+    const { urls, api } = montar([resposta([book("Pinnacle", "2.1", "3.5", "3.9", "1.9", "2.0")])]);
+    const m = await api.odds(123);
+    globalThis.fetch = original;
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain("fixture=123");
+    expect(urls[0]).toContain("bookmaker=4");
+    expect(m["1X2"]!.source).toBe("Pinnacle");
+  });
+
+  it("sem Pinnacle no jogo, tenta a Bet365 e depois desiste (no máximo 2 chamadas)", async () => {
+    const { urls, api } = montar([resposta([]), resposta([book("Bet365", "2.0", "3.4", "3.8")])]);
+    const m = await api.odds(123);
+    expect(urls.map((u) => /bookmaker=(\d+)/.exec(u)![1])).toEqual(["4", "8"]);
+    expect(m["1X2"]!.source).toBe("Bet365");
+
+    const vazio = montar([resposta([]), resposta([])]);
+    expect(await vazio.api.odds(456)).toEqual({});
+    expect(vazio.urls).toHaveLength(2);
+    globalThis.fetch = original;
   });
 });
 

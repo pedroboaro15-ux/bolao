@@ -4,7 +4,7 @@ import { ConflictError, type Write } from "../db/types";
 import type { Settings } from "../lib/settings";
 import { badRequest, conflict } from "../lib/errors";
 import { buildOdds } from "../lib/odds";
-import { relevanceScore } from "../lib/relevance";
+import { isBrazil, relevanceScore } from "../lib/relevance";
 import { addDays, bolaoWindow } from "../lib/dates";
 import { ApiFootball, QuotaError } from "./apifootball";
 
@@ -31,7 +31,9 @@ async function calendarFixtures(repo: Repo, api: ApiFootball, settings: Settings
     .filter((f) => !["CANC", "PST", "ABD"].includes(f.status))
     .map((f) => ({ id: f.id, kickoff: f.kickoff, status: f.status, league: f.league, home: f.home, away: f.away, relevance: relevanceScore(f, settings) }))
     .sort((a, b) => b.relevance - a.relevance || a.kickoff.getTime() - b.kickoff.getTime());
-  const doc = { date, fetched_at: new Date(), total: fixtures.length, fixtures: fixtures.slice(0, MAX_CACHED) };
+  // Os 150 mais relevantes do mundo + TODOS os do Brasil (Série B, C, D, estaduais), que nunca podem sumir da lista.
+  const kept = fixtures.filter((f, i) => i < MAX_CACHED || isBrazil(f));
+  const doc = { date, fetched_at: new Date(), total: fixtures.length, fixtures: kept };
   await repo.db.commit([{ op: "set", path: `fixtures_cache/${date}`, data: doc }]);
   return doc;
 }
@@ -48,9 +50,10 @@ export async function loadFixtures(repo: Repo, api: ApiFootball, settings: Setti
   const seen = new Set<number>();
   const fixtures = [...first.fixtures, ...second.fixtures]
     .filter((f) => f.kickoff >= start && f.kickoff < end && !seen.has(f.id) && seen.add(f.id))
+    .map((f) => ({ ...f, relevance: relevanceScore(f, settings) })) // recalcula: vale a configuração de agora, mesmo com a lista em cache
     .sort((a, b) => b.relevance - a.relevance || a.kickoff.getTime() - b.kickoff.getTime());
   const fetched = [first.fetched_at, second.fetched_at].sort((a, b) => a.getTime() - b.getTime())[0];
-  return { date, fetched_at: fetched, total: fixtures.length, fixtures: fixtures.slice(0, MAX_CACHED), janela: { inicio: start, fim: end } };
+  return { date, fetched_at: fetched, total: fixtures.length, fixtures, janela: { inicio: start, fim: end } };
 }
 
 async function freeRoundId(repo: Repo, date: string): Promise<string> {

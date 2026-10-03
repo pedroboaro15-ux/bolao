@@ -9,6 +9,7 @@ create table if not exists users (
   nickname    text not null,
   email       text not null unique,
   phone       text,                        -- só dígitos, com DDD
+  edits       jsonb,                       -- o que a pessoa já mudou no perfil (apelido, telefone, senha: só 1 vez cada)
   role        text not null default 'player' check (role in ('admin', 'player')),
   created_at  timestamptz not null default now(),
   version     bigint not null default 1
@@ -16,6 +17,7 @@ create table if not exists users (
 
 -- Bancos criados antes do cadastro aberto não tinham o telefone:
 alter table users add column if not exists phone text;
+alter table users add column if not exists edits jsonb;
 
 create table if not exists rounds (
   id                 text primary key,     -- AAAA-MM-DD (dia do bolão: 06:00 às 06:00 em São Paulo), ou AAAA-MM-DD-2...
@@ -50,8 +52,12 @@ create table if not exists matches (
   extras_frozen    jsonb,                  -- extras (gols/placar) que valiam no início do jogo
   scored           boolean,
   odds_error       text,
+  live             jsonb,                  -- placar ao vivo: {home, away, status, elapsed, at}
   version          bigint not null default 1
 );
+
+-- Bancos criados antes do placar ao vivo:
+alter table matches add column if not exists live jsonb;
 create index if not exists matches_round_idx on matches (round_id);
 
 create table if not exists predictions (
@@ -154,7 +160,7 @@ begin
     op   := x->>'op';
 
     if coll not in ('users', 'rounds', 'matches', 'predictions', 'standings', 'api_usage', 'push_subs',
-                    'settings', 'fixtures_cache', 'team_cache') then
+                    'settings', 'fixtures_cache', 'team_cache', 'rate_limits', 'questions', 'answers') then
       raise exception 'coleção inválida: %', coll;
     end if;
     if did is null or did = '' then
@@ -219,6 +225,45 @@ begin
 end;
 $$;
 
+-- Perguntas do dia (também jogos de basquete e lutas do UFC), com odds escolhidas pelo admin.
+create table if not exists questions (
+  id          text primary key,
+  date        text not null,                -- dia do bolão (AAAA-MM-DD)
+  kind        text not null default 'pergunta' check (kind in ('pergunta', 'basquete', 'ufc')),
+  title       text not null,
+  options     jsonb not null,               -- [{id, label, odd}]
+  closes_at   timestamptz not null,
+  result      text,                          -- id da opção certa
+  voided      boolean not null default false,
+  created_at  timestamptz not null default now(),
+  version     bigint not null default 1
+);
+create index if not exists questions_date_idx on questions (date);
+
+create table if not exists answers (
+  id           text primary key,             -- {questionId}_{userId}
+  question_id  text not null,
+  user_id      text not null,
+  date         text not null,
+  option_id    text not null,
+  points       double precision,
+  hits         integer,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  version      bigint not null default 1
+);
+create index if not exists answers_question_idx on answers (question_id);
+create index if not exists answers_date_idx on answers (date);
+create index if not exists answers_user_idx on answers (user_id);
+
+-- Vagas dos limites (cadastro: 2 por minuto; login: 5 tentativas por conta). O cron apaga as antigas.
+create table if not exists rate_limits (
+  id          text primary key,
+  created_at  timestamptz not null default now(),
+  version     bigint not null default 1
+);
+create index if not exists rate_limits_created_idx on rate_limits (created_at);
+
 -- ---------------------------------------------------------------------------
 -- Segurança: só a chave secreta do servidor (service_role) mexe nos dados.
 -- ---------------------------------------------------------------------------
@@ -232,8 +277,11 @@ alter table push_subs      enable row level security;
 alter table settings       enable row level security;
 alter table fixtures_cache enable row level security;
 alter table team_cache     enable row level security;
+alter table rate_limits    enable row level security;
+alter table questions      enable row level security;
+alter table answers        enable row level security;
 
-revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache
+revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache, rate_limits, questions, answers
   from anon, authenticated;
 revoke all on function apply_writes(jsonb) from public, anon, authenticated;
 grant execute on function apply_writes(jsonb) to service_role;

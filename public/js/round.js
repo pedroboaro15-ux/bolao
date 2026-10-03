@@ -1,7 +1,8 @@
 // Tela principal: rodada atual. Palpites salvos automaticamente (sem cupom).
-import { api, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, now, odd, pts, signed, syncClock, toast, zebraBlock } from "./util.js";
+import { api, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, liveLabel, now, odd, pts, signed, syncClock, toast, zebraBlock } from "./util.js";
 import { go, state } from "./store.js";
 import { openTeam } from "./team.js";
+import { mountQuestions } from "./questions.js";
 
 let S = null;
 
@@ -27,8 +28,13 @@ export function render(view, { id }) {
   S = { view, id, data: null, drafts: {}, touched: new Set(), errors: {}, league: "all", tab: "todos", collapsed: new Set(), saving: false, again: false, saveTimer: null, rank: null, rankAt: 0 };
   view.innerHTML = `<div class="page"><p class="boot">Carregando rodada…</p></div>`;
   load();
+  let tick = 0;
   const timer = setInterval(() => {
-    if (S?.data?.jogos.some((m) => !m.locked && isLocked(m))) load();
+    tick++;
+    const jogos = S?.data?.jogos ?? [];
+    const virou = jogos.some((m) => !m.locked && isLocked(m)); // um jogo acabou de começar
+    const rolando = jogos.some((m) => isLocked(m) && !m.settled && !m.voided); // placar ao vivo: olha de novo a cada 1 min
+    if (document.visibilityState === "visible" && (virou || (rolando && tick % 3 === 0))) load();
   }, 20000);
   const onClick = (e) => handle(e);
   const beforeUnload = (e) => {
@@ -211,6 +217,9 @@ async function save(keepalive = false) {
 
 // ---------- desenho ----------
 
+/** Dia do bolão de agora (06:00 → 06:00 em São Paulo = começa às 09:00 UTC). */
+const todayBolao = () => new Date(now() - 9 * 3600_000).toISOString().slice(0, 10);
+
 const statusText = (s) => ({ open: "aberta para palpites", closed: "palpites encerrados", finished: "encerrada", draft: "rascunho" })[s] ?? s;
 const pickLabel = (m, d) => (d.pick_1x2 === "1" ? m.home.name : d.pick_1x2 === "2" ? m.away.name : "Empate");
 
@@ -227,7 +236,8 @@ function paint() {
   const y = window.scrollY;
   const d = S.data;
   if (!d.rodada) {
-    S.view.innerHTML = `<div class="page narrow"><div class="card card-pad empty"><h2>Nenhuma rodada por aqui ainda</h2><p>Assim que o administrador abrir a próxima rodada, os jogos aparecem aqui.</p></div></div>`;
+    S.view.innerHTML = `<div class="page narrow"><div id="perguntas-slot"></div><div class="card card-pad empty"><h2>Nenhuma rodada por aqui ainda</h2><p>Assim que o administrador abrir a próxima rodada, os jogos aparecem aqui.</p></div></div>`;
+    mountQuestions(S.view.querySelector("#perguntas-slot"), todayBolao());
     return;
   }
   const leagues = new Map();
@@ -280,6 +290,8 @@ function paint() {
           <div><small>Lucro na rodada</small><b>${meRow ? pts(meRow.points) : "0.00"}</b></div>
           <div><small>Palpites feitos</small><b>${done} de ${open.length}</b></div>
         </div>
+        ${open.some((m) => m.odds_1x2) ? `<div class="notice" style="margin-bottom:12px">${icon("lock").replace("<svg", '<svg width="14" height="14" style="vertical-align:-2px"')} As odds podem mudar até cada jogo começar e <b>congelam no início da partida</b>: vale a odd daquele momento, não a de quando você palpitou.</div>` : ""}
+        <div id="perguntas-slot"></div>
         <div class="tabs" role="tablist">${[["todos", "Todos"], ["abertos", "Abertos"], ["encerrados", "Encerrados"]].map(([k, t]) => `<button role="tab" data-act="tab" data-v="${k}" aria-selected="${S.tab === k}">${t}</button>`).join("")}</div>
         ${groups.size ? [...groups.values()].map(group).join("") : `<div class="empty">Nenhum jogo com esse filtro.</div>`}
       </section>
@@ -302,6 +314,7 @@ function paint() {
       </aside>
     </div>
   </div>`;
+  mountQuestions(S.view.querySelector("#perguntas-slot"), d.rodada.date);
   window.scrollTo(0, y);
 }
 
@@ -323,10 +336,11 @@ const extraHit = (m, mine) => {
 
 function teamRow(m, side, showScore) {
   const t = side === "h" ? m.home : m.away;
-  const sc = side === "h" ? m.home_goals : m.away_goals;
+  const live = !showScore && isLocked(m) && m.live ? m.live : null;
+  const sc = showScore ? (side === "h" ? m.home_goals : m.away_goals) : live ? (side === "h" ? live.home : live.away) : null;
   const op = side === "h" ? m.away_goals : m.home_goals;
   const lose = showScore && sc < op;
-  return `<button class="team${lose ? " lose" : ""}" data-act="team" data-m="${m.id}" data-v="${t.id}|${esc(t.name)}">${crest(t)}<span class="tn">${esc(t.name)}</span><span class="sc num">${showScore ? sc : ""}</span></button>`;
+  return `<button class="team${lose ? " lose" : ""}" data-act="team" data-m="${m.id}" data-v="${t.id}|${esc(t.name)}">${crest(t)}<span class="tn">${esc(t.name)}</span><span class="sc num${live ? " live" : ""}">${sc ?? ""}</span></button>`;
 }
 
 function matchCard(m) {
@@ -337,7 +351,7 @@ function matchCard(m) {
   const scored = m.settled && !m.voided;
   const real = scored ? outcome(m.home_goals, m.away_goals) : null;
   const realOu = scored ? (m.home_goals + m.away_goals > 2.5 ? "over" : "under") : null;
-  const badge = m.voided ? `<span class="badge end">Anulado</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? `<span class="badge live">Em andamento</span>` : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
+  const badge = m.voided ? `<span class="badge end">Anulado</span>` : scored ? `<span class="badge end">Encerrado</span>` : locked ? `<span class="badge live">${m.live ? esc(liveLabel(m.live)) : "Em andamento"}</span>` : `<span class="badge open">Fecha às ${fmtClock(m.kickoff_utc)}</span>`;
   const top = `<div class="ev-top"><span>${fmtWhen(m.kickoff_utc)}</span>${badge}</div>`;
   const teams = `<div class="teams">${teamRow(m, "h", scored)}${teamRow(m, "a", scored)}</div>`;
   const cur = locked ? mine : d;
@@ -375,7 +389,7 @@ function matchCard(m) {
     : `<div class="seg" role="group" aria-label="Palpite extra"><button aria-pressed="${mode === null}" data-act="mode" data-m="${m.id}" data-v="none">Só vencedor</button>${ex.ou ? `<button aria-pressed="${mode === "ou"}" data-act="mode" data-m="${m.id}" data-v="ou">Gols</button>` : ""}${ex.cs ? `<button aria-pressed="${mode === "cs"}" data-act="mode" data-m="${m.id}" data-v="cs">Placar exato</button>` : ""}</div>`;
   const showExtra = locked ? !!(ex.ou || ex.cs) || !!mode : ex.ou || ex.cs;
   const noOdds = !o1 && !locked ? `<div class="hint err">As odds ainda não saíram. Você já pode palpitar, mas o jogo só vale pontos se houver odds no início da partida.</div>` : "";
-  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>odd justa</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
+  const mk = `<div class="mk"><div class="mk-l"><span>${mode === "cs" && !locked ? "Vencedor · definido pelo placar" : "Vencedor"}</span><span>${locked ? "odd congelada no início" : o1 ? `odd justa · congela às ${fmtClock(m.kickoff_utc)}` : "odd justa"}</span></div><div class="odds c3">${chips}</div>${noOdds}${showExtra ? `<div class="mk-l"><span>${ex.ou && ex.cs ? "Extra opcional: gols OU placar exato (só um)" : "Palpite extra (opcional)"}</span>${seg}</div>${extra}` : ""}</div>`;
 
   let foot;
   if (scored) {

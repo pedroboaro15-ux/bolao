@@ -10,6 +10,9 @@ import { recalcRound } from "../services/results";
 import { notifyFinished } from "../services/cron";
 import { pushConfigured, sendPush } from "../services/push";
 import { userView } from "./public";
+import { isBrazil } from "../lib/relevance";
+import { KINDS, answersOf, parseQuestionInput, questionView, questionsOfDay, settleDay } from "../services/questions";
+import { nicknameTaken, parseNickname, parsePhone } from "../lib/profile";
 
 const goal = (v: unknown) => {
   const n = Number(v);
@@ -29,7 +32,9 @@ export function adminRoutes() {
     const settings = await repo.settings();
     const api = new ApiFootball(c.env, repo, settings);
     const cache = await loadFixtures(repo, api, settings, date, c.req.query("atualizar") === "1");
-    const liga = Number(c.req.query("liga") ?? 0);
+    const ligaQ = c.req.query("liga") ?? "0";
+    const soBrasil = ligaQ === "br";
+    const liga = soBrasil ? 0 : Number(ligaQ);
 
     const ligas = new Map<number, { id: number; name: string; country?: string; count: number }>();
     for (const f of cache.fixtures) {
@@ -37,7 +42,7 @@ export function adminRoutes() {
       cur.count++;
       ligas.set(f.league.id, cur);
     }
-    const shown = cache.fixtures.filter((f) => !liga || f.league.id === liga).slice(0, 30);
+    const shown = cache.fixtures.filter((f) => (soBrasil ? isBrazil(f) : !liga || f.league.id === liga)).slice(0, soBrasil || liga ? 80 : 30);
     const taken = new Set((await repo.matchesByIds(shown.map((f) => String(f.id)))).map((m) => m.id));
     const ja = await chosenToday(repo, date);
     return c.json({
@@ -47,7 +52,8 @@ export function adminRoutes() {
       ja_escolhidos: ja,
       fetched_at: cache.fetched_at,
       total: cache.total,
-      ligas: [...ligas.values()].sort((a, b) => b.count - a.count),
+      brasil: cache.fixtures.filter(isBrazil).length,
+      ligas: [...ligas.values()].sort((a, b) => Number(b.country === "Brazil") - Number(a.country === "Brazil") || b.count - a.count),
       jogos: shown.map((f) => ({ ...f, ja_em_rodada: taken.has(String(f.id)) })),
     });
   });
@@ -202,11 +208,113 @@ export function adminRoutes() {
     return c.json(res.ok ? res : { ...res, erro: res.motivo }, res.ok ? 200 : 422);
   });
 
+  // ---------- perguntas do dia (também basquete e UFC) ----------
+
+  r.get("/perguntas", async (c) => {
+    const { repo } = c.get("ctx");
+    const date = c.req.query("date") ?? bolaoDay();
+    if (!isDateString(date)) throw badRequest("Data inválida");
+    const [qs, all] = await Promise.all([questionsOfDay(repo, date), answersOf(repo, "date", date)]);
+    const now = new Date();
+    return c.json({
+      date,
+      tipos: KINDS,
+      perguntas: qs.map((q) => {
+        const mine = all.filter((x) => x.question_id === q.id);
+        // o admin sempre vê quantos escolheram cada opção
+        return { ...questionView(q, null, mine, new Date(8640000000000000)), closed: q.closes_at <= now, respostas: mine.length };
+      }),
+    });
+  });
+
+  r.post("/perguntas", async (c) => {
+    const { repo } = c.get("ctx");
+    const input = parseQuestionInput(await c.req.json().catch(() => ({})), isDateString);
+    const id = `q${Date.now().toString(36)}${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+    await repo.db.commit([{ op: "set", path: `questions/${id}`, data: { ...input, result: null, voided: false, created_at: new Date() }, mustNotExist: true }]);
+    return c.json({ id }, 201);
+  });
+
+  // Editar (texto, odds, horário). Opções com respostas não podem sumir; o resultado se dá em /resultado.
+  r.put("/perguntas/:id", async (c) => {
+    const { repo } = c.get("ctx");
+    const id = c.req.param("id");
+    const doc = await repo.db.get<any>(`questions/${id}`);
+    if (!doc) throw notFound("Pergunta não encontrada");
+    const input = parseQuestionInput(await c.req.json().catch(() => ({})), isDateString);
+    const answers = await answersOf(repo, "question_id", id);
+    const kept = new Set(input.options.map((o) => o.id));
+    if (answers.some((x) => !kept.has(x.option_id))) throw badRequest("Não dá para apagar uma opção que já foi escolhida por alguém");
+    if (input.date !== doc.data.date && answers.length) throw badRequest("Não dá para mudar o dia de uma pergunta já respondida");
+    await repo.db.commit([{ op: "merge", path: `questions/${id}`, data: input }]);
+    if (doc.data.result || doc.data.voided) await settleDay(repo, input.date);
+    return c.json({ ok: true });
+  });
+
+  // Resultado: { option_id } marca a certa; { anular: true } anula (ninguém pontua); { limpar: true } volta a "sem resultado".
+  r.post("/perguntas/:id/resultado", async (c) => {
+    const { repo } = c.get("ctx");
+    const id = c.req.param("id");
+    const doc = await repo.db.get<any>(`questions/${id}`);
+    if (!doc) throw notFound("Pergunta não encontrada");
+    const body: any = await c.req.json().catch(() => ({}));
+    let data: Record<string, any>;
+    if (body.anular === true) data = { voided: true, result: null };
+    else if (body.limpar === true) data = { voided: false, result: null };
+    else {
+      const opt = String(body.option_id ?? "");
+      if (!doc.data.options.some((o: any) => o.id === opt)) throw badRequest("Opção inválida");
+      data = { voided: false, result: opt };
+      // dar o resultado também fecha as respostas
+      if (new Date(doc.data.closes_at) > new Date()) data.closes_at = new Date();
+    }
+    await repo.db.commit([{ op: "merge", path: `questions/${id}`, data }]);
+    await settleDay(repo, doc.data.date);
+    return c.json({ ok: true });
+  });
+
+  r.delete("/perguntas/:id", async (c) => {
+    const { repo } = c.get("ctx");
+    const id = c.req.param("id");
+    const doc = await repo.db.get<any>(`questions/${id}`);
+    if (!doc) throw notFound("Pergunta não encontrada");
+    const answers = await answersOf(repo, "question_id", id);
+    await repo.db.commit([{ op: "delete", path: `questions/${id}` }, ...answers.map((x) => ({ op: "delete" as const, path: `answers/${x.id}` }))]);
+    await settleDay(repo, doc.data.date);
+    return c.json({ ok: true });
+  });
+
   // ---------- usuários ----------
 
   r.get("/usuarios", async (c) => {
     const { repo } = c.get("ctx");
     return c.json({ usuarios: (await repo.users()).map((u) => ({ ...userView(u.id, u), phone: u.phone ?? null })) });
+  });
+
+  // O admin muda apelido e telefone de qualquer pessoa e pode "liberar" uma nova alteração do próprio perfil.
+  r.patch("/usuarios/:id", async (c) => {
+    const { repo } = c.get("ctx");
+    const id = c.req.param("id");
+    const body: any = await c.req.json().catch(() => ({}));
+    const users = await repo.users();
+    const target = users.find((u) => u.id === id);
+    if (!target) throw notFound("Usuário não encontrado");
+    const data: Record<string, any> = {};
+    if (body.nickname !== undefined && String(body.nickname).trim() !== target.nickname) {
+      const nickname = parseNickname(body.nickname);
+      if (nicknameTaken(users, nickname, id)) throw conflict("Esse apelido já está em uso");
+      data.nickname = nickname;
+      if (target.name === target.nickname) data.name = nickname;
+    }
+    if (body.phone !== undefined && String(body.phone).trim() !== "") {
+      const phone = parsePhone(body.phone);
+      if (phone !== (target.phone ?? null)) data.phone = phone;
+    }
+    if (body.liberar === true) data.edits = {};
+    if (!Object.keys(data).length) throw badRequest("Nada para alterar");
+    await repo.db.commit([{ op: "merge", path: `users/${id}`, data, mustExist: true }]);
+    forgetUser(id);
+    return c.json({ ok: true });
   });
 
   r.post("/usuarios/:id/papel", async (c) => {

@@ -1,14 +1,20 @@
 import { Hono } from "hono";
-import type { Prediction } from "../types";
-import { extrasOf, matchView, predictionView, type AppEnv } from "../http";
+import type { Prediction, ProfileEdits, Standings } from "../types";
+import { extrasOf, forgetUser, matchView, predictionView, type AppEnv } from "../http";
+import { userView } from "./public";
 import type { Repo } from "../db/repo";
 import type { Write } from "../db/types";
 import type { Settings } from "../lib/settings";
-import { badRequest, forbidden, notFound } from "../lib/errors";
+import { HttpError, badRequest, conflict, forbidden, notFound } from "../lib/errors";
+import { nicknameTaken, parseNickname, parsePhone } from "../lib/profile";
+import { emailKey, limitsOf, takeSlot, waitText } from "../lib/ratelimit";
 import { isLocked, parsePredictionInput, predictionBlockedReason, type PredictionInput } from "../lib/predictions";
 import { computeStats } from "../lib/stats";
 import { subId } from "../services/push";
 import { ApiFootball } from "../services/apifootball";
+import { refreshLive } from "../services/live";
+import { answersOf, isClosed, isSettledQ, questionView, questionsOfDay } from "../services/questions";
+import { bolaoDay, isDateString } from "../lib/dates";
 
 const roundSummary = (r: { id: string; title: string; date: string; status: string }) => ({ id: r.id, title: r.title, date: r.date, status: r.status });
 
@@ -22,8 +28,18 @@ async function roundView(repo: Repo, roundId: string, userId: string, settings: 
     jogos: matches.map((m) => matchView(m, mineByMatch.get(m.id) ?? null, settings, now)),
     coringa: { ativo: settings.jokerEnabled, multiplicador: settings.jokerMultiplier },
     agora: now,
+    raw: matches,
   };
 }
+
+/** Atualiza o placar ao vivo em segundo plano (no máximo 1 chamada à API a cada 5 min por rodada). Fora do modo demo. */
+function liveInBackground(c: any, repo: Repo, settings: Settings, roundId: string, matches: Parameters<typeof refreshLive>[3]) {
+  if (c.env.DEV_MEMORY === "1") return;
+  c.executionCtx.waitUntil(refreshLive(repo, new ApiFootball(c.env, repo, settings), roundId, matches).catch((e) => console.error("ao vivo:", e?.message)));
+}
+
+/** O ranking guarda o apelido da época; aqui ele é trocado pelo apelido de agora (a pessoa pode ter mudado). */
+const withNick = <T extends { user_id?: string; nickname?: string }>(x: T, nick: Map<string, string>): T => ({ ...x, nickname: (x.user_id && nick.get(x.user_id)) || x.nickname });
 
 /** Rodada atual: a aberta mais recente; senão a última fechada/encerrada. `outras` = as mais recentes, para navegar. */
 async function roundsNav(repo: Repo) {
@@ -48,7 +64,8 @@ export function playerRoutes() {
     const nav = await roundsNav(repo);
     if (!nav.atual) return c.json({ rodada: null, jogos: [], ...nav, agora: new Date() });
     const settings = await repo.settings();
-    const view = await roundView(repo, nav.atual, user.id, settings, new Date(), user.role === "admin");
+    const { raw, ...view } = await roundView(repo, nav.atual, user.id, settings, new Date(), user.role === "admin");
+    liveInBackground(c, repo, settings, nav.atual, raw);
     return c.json({ ...view, ...nav });
   });
 
@@ -58,7 +75,8 @@ export function playerRoutes() {
     const { repo } = c.get("ctx");
     const user = c.get("user");
     const settings = await repo.settings();
-    const view = await roundView(repo, c.req.param("id"), user.id, settings, new Date(), user.role === "admin");
+    const { raw, ...view } = await roundView(repo, c.req.param("id"), user.id, settings, new Date(), user.role === "admin");
+    liveInBackground(c, repo, settings, view.rodada.id, raw);
     const nav = await roundsNav(repo);
     const outras = nav.outras.some((o) => o.id === view.rodada.id) ? nav.outras : [...nav.outras, view.rodada];
     return c.json({ ...view, ...nav, outras });
@@ -199,17 +217,106 @@ export function playerRoutes() {
       docId = "all";
       titulo = "Geral";
     }
-    const st = escopo === "mes" && !id ? null : await repo.standings(docId);
+    const [st, users] = await Promise.all([escopo === "mes" && !id ? null : repo.standings(docId), repo.users()]);
+    const nick = new Map(users.map((u) => [u.id, u.nickname]));
     return c.json({
       escopo,
       id,
       titulo,
-      rows: st?.rows ?? [],
-      zebra: st?.zebra ?? null,
-      streaks: st?.streaks ?? [],
+      rows: (st?.rows ?? []).map((x) => withNick(x, nick)),
+      zebra: st?.zebra ? withNick(st.zebra as any, nick) : null,
+      streaks: (st?.streaks ?? []).map((x) => withNick(x, nick)),
       updated_at: st?.updated_at ?? null,
       opcoes: { rodadas: rounds.slice(0, 30).map(roundSummary), meses },
     });
+  });
+
+  // Ganho por rodada: quanto cada participante fez em cada uma das últimas rodadas (usa o ranking já materializado de cada rodada).
+  r.get("/ranking/rodadas", async (c) => {
+    const { repo } = c.get("ctx");
+    const rounds = (await repo.rounds(60)).filter((x) => x.status !== "draft").slice(0, 10).reverse();
+    const [docs, users] = await Promise.all([repo.db.getMany<Standings>(rounds.map((x) => `standings/round_${x.id}`)), repo.users()]);
+    const nick = new Map(users.map((u) => [u.id, u.nickname]));
+    const people = new Map<string, { user_id: string; nickname: string; total: number; porRodada: Record<string, number> }>();
+    rounds.forEach((rd, i) => {
+      for (const row of docs[i]?.data.rows ?? []) {
+        if (!nick.has(row.user_id)) continue; // conta removida
+        const p = people.get(row.user_id) ?? { user_id: row.user_id, nickname: nick.get(row.user_id)!, total: 0, porRodada: {} };
+        p.porRodada[rd.id] = Math.round(row.points * 100) / 100;
+        p.total = Math.round((p.total + row.points) * 100) / 100;
+        people.set(row.user_id, p);
+      }
+    });
+    return c.json({
+      rodadas: rounds.map(roundSummary),
+      participantes: [...people.values()].sort((a, b) => b.total - a.total || a.nickname.localeCompare(b.nickname, "pt-BR")),
+    });
+  });
+
+  // ---------- perfil: apelido, telefone e senha, uma vez cada (depois, só o administrador libera outra) ----------
+
+  const ONCE = (fem: boolean) => `só pode ser alterad${fem ? "a" : "o"} uma vez. Peça ao administrador para liberar uma nova alteração.`;
+
+  r.put("/perfil", async (c) => {
+    const { repo } = c.get("ctx");
+    const user = c.get("user");
+    const body: any = await c.req.json().catch(() => ({}));
+    const edits: ProfileEdits = { ...(user.edits ?? {}) };
+    const data: Record<string, any> = {};
+
+    if (body.nickname !== undefined) {
+      const nickname = parseNickname(body.nickname);
+      if (nickname !== user.nickname) {
+        if (edits.nickname) throw forbidden(`O apelido ${ONCE(false)}`);
+        if (nicknameTaken(await repo.users(), nickname, user.id)) throw conflict("Esse apelido já está em uso. Escolha outro.");
+        data.nickname = nickname;
+        if (user.name === user.nickname) data.name = nickname;
+        edits.nickname = true;
+      }
+    }
+    if (body.phone !== undefined) {
+      const phone = parsePhone(body.phone);
+      if (phone !== (user.phone ?? null)) {
+        if (edits.phone) throw forbidden(`O telefone ${ONCE(false)}`);
+        data.phone = phone;
+        edits.phone = true;
+      }
+    }
+    if (!Object.keys(data).length) throw badRequest("Nada para alterar");
+
+    await repo.db.commit([{ op: "merge", path: `users/${user.id}`, data: { ...data, edits }, mustExist: true }]);
+    forgetUser(user.id);
+    return c.json({ usuario: userView(user.id, { ...user, ...data, edits }) });
+  });
+
+  r.post("/perfil/senha", async (c) => {
+    const { repo, auth } = c.get("ctx");
+    const user = c.get("user");
+    const body: any = await c.req.json().catch(() => ({}));
+    const atual = String(body.atual ?? "");
+    const nova = String(body.nova ?? "");
+    if (user.edits?.password) throw forbidden(`A senha ${ONCE(true)}`);
+    if (!atual) throw badRequest("Informe a senha atual");
+    if (nova.length < 8 || nova.length > 100) throw badRequest("A senha nova deve ter pelo menos 8 caracteres");
+    if (nova !== String(body.confirmar ?? "")) throw badRequest("As senhas não são iguais");
+    if (nova === atual) throw badRequest("A senha nova deve ser diferente da atual");
+
+    // Conferir a senha atual conta como tentativa de login (mesmo limite de 5 erros).
+    const lim = limitsOf(c.env);
+    const slot = await takeSlot(repo.db, `login:${await emailKey(user.email)}`, lim.loginFails, lim.loginWindowMs);
+    if (!slot.ok) throw new HttpError(429, `Muitas tentativas erradas. Tente de novo em ${waitText(slot.resetAt)}.`);
+    try {
+      await auth.signIn(user.email, atual);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 401) throw badRequest("A senha atual está incorreta");
+      throw e;
+    }
+    await slot.clear();
+
+    await auth.updatePassword(user.id, nova);
+    await repo.db.commit([{ op: "merge", path: `users/${user.id}`, data: { edits: { ...(user.edits ?? {}), password: true } }, mustExist: true }]);
+    forgetUser(user.id);
+    return c.json({ ok: true });
   });
 
   // Meus palpites + estatísticas (blocos do perfil).
@@ -261,6 +368,47 @@ export function playerRoutes() {
     }
     await repo.db.commit([{ op: "set", path: `team_cache/${teamId}`, data: doc }]);
     return c.json(doc);
+  });
+
+  // ---------- perguntas do dia (também basquete e UFC) ----------
+
+  r.get("/perguntas", async (c) => {
+    const { repo } = c.get("ctx");
+    const user = c.get("user");
+    const date = c.req.query("date") ?? bolaoDay();
+    if (!isDateString(date)) throw badRequest("Data inválida");
+    const now = new Date();
+    const qs = await questionsOfDay(repo, date);
+    if (!qs.length) return c.json({ date, perguntas: [] });
+    const all = await answersOf(repo, "date", date);
+    return c.json({
+      date,
+      perguntas: qs.map((q) => {
+        const mine = all.find((a) => a.question_id === q.id && a.user_id === user.id) ?? null;
+        return questionView(q, mine, all.filter((a) => a.question_id === q.id), now);
+      }),
+    });
+  });
+
+  // Responder: uma opção por pergunta, até a hora de fechar (conferida aqui, com a hora do servidor).
+  r.put("/perguntas/:id/resposta", async (c) => {
+    const { repo } = c.get("ctx");
+    const user = c.get("user");
+    const qid = c.req.param("id");
+    const body: any = await c.req.json().catch(() => ({}));
+    const doc = await repo.db.get<any>(`questions/${qid}`);
+    if (!doc) throw notFound("Pergunta não encontrada");
+    const q = { id: doc.id, ...doc.data };
+    const now = new Date();
+    if (isClosed(q, now) || isSettledQ(q)) throw badRequest("Esta pergunta já fechou");
+    const optionId = String(body.option_id ?? "");
+    if (!q.options.some((o: any) => o.id === optionId)) throw badRequest("Opção inválida");
+    const id = `${qid}_${user.id}`;
+    const prev = await repo.db.get<any>(`answers/${id}`);
+    await repo.db.commit([
+      { op: "set", path: `answers/${id}`, data: { question_id: qid, user_id: user.id, date: q.date, option_id: optionId, points: null, hits: null, created_at: prev?.data.created_at ?? now, updated_at: now } },
+    ]);
+    return c.json({ ok: true });
   });
 
   // Push: guarda a inscrição do aparelho.

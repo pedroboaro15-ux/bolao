@@ -5,6 +5,7 @@ import { state, go } from "./store.js";
 const TABS = [
   ["", "Jogos do dia"],
   ["rodadas", "Rodadas e resultados"],
+  ["perguntas", "Perguntas do dia"],
   ["usuarios", "Usuários"],
   ["config", "Configurações"],
   ["api", "APIs"],
@@ -25,7 +26,7 @@ export function render(view, parts) {
   </div>`;
   extrasToggles($("#extras-box", view));
   const body = $("#admin-body", view);
-  const pages = { "": daily, rodadas: rounds, usuarios: users, config: settings, api: usage };
+  const pages = { "": daily, rodadas: rounds, perguntas: questions, usuarios: users, config: settings, api: usage };
   (pages[tab] ?? daily)(body, arg).catch((e) => (body.innerHTML = `<div class="card card-pad"><p class="error">${esc(e.message)}</p></div>`));
 }
 
@@ -97,7 +98,7 @@ async function daily(body) {
       <div class="card card-pad form" style="margin-bottom:14px">
         <div class="cols2">
           <label class="f">Dia<input type="date" data-date value="${S.date}"></label>
-          <label class="f">Campeonato<select data-liga><option value="0">Todos (mais relevantes)</option>${d.ligas.map((l) => `<option value="${l.id}" ${l.id === S.liga ? "selected" : ""}>${esc(l.name)} (${l.count})</option>`).join("")}</select></label>
+          <label class="f">Campeonato<select data-liga><option value="0">Todos (mais relevantes)</option><option value="br" ${S.liga === "br" ? "selected" : ""}>Só Brasil (${d.brasil ?? 0})</option>${d.ligas.map((l) => `<option value="${l.id}" ${l.id === S.liga ? "selected" : ""}>${l.country === "Brazil" ? "BR · " : ""}${esc(l.name)} (${l.count})</option>`).join("")}</select></label>
         </div>
         <div class="notice">Dia do bolão: das <b>06:00 de ${fmtDate(S.date)}</b> até as <b>06:00 de ${fmtDate(nextDay(S.date))}</b> (horário de São Paulo). Limite de <b>${d.limite}</b> jogos por dia; já escolhidos: <b>${d.ja_escolhidos}</b>.</div>
         <div class="muted" style="font-size:13px">${d.total} jogos no dia · lista de ${fmtWhen(d.fetched_at)} · mostrando os 30 mais relevantes. <button class="btn small" data-refresh>${icon("refresh").replace("<svg", '<svg width="14" height="14"')} Buscar de novo (gasta 2 chamadas)</button></div>
@@ -122,7 +123,7 @@ async function daily(body) {
       S.liga = 0;
       load().catch((err) => toast(err.message, "err"));
     } else if (e.target.matches("[data-liga]")) {
-      S.liga = Number(e.target.value);
+      S.liga = e.target.value === "br" ? "br" : Number(e.target.value);
       load().catch((err) => toast(err.message, "err"));
     } else if (e.target.matches("[data-pick]")) {
       const id = Number(e.target.dataset.pick);
@@ -294,24 +295,171 @@ function manualOdds(matchId, done) {
   };
 }
 
+// ---------- perguntas do dia (também basquete e UFC) ----------
+
+const KIND_HELP = {
+  pergunta: { title: "Quem vence a eleição para prefeito de São Paulo?", options: "Candidato A = 1.80\nCandidato B = 2.10" },
+  basquete: { title: "Lakers x Celtics: quem vence?", options: "Lakers = 2.10\nCeltics = 1.75" },
+  ufc: { title: "UFC: Lutador A x Lutador B", options: "Lutador A = 1.60\nLutador B = 2.40" },
+};
+const pad = (n) => String(n).padStart(2, "0");
+const localInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const optionsText = (opts) => opts.map((o) => `${o.label} = ${odd(o.odd)}`).join("\n");
+function parseOptions(text, prev = []) {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const m = /^(.*?)\s*[=:;|]\s*([\d.,]+)\s*$/.exec(l);
+      if (!m) throw new Error(`Linha sem odd: “${l}”. Use “Nome = 1.80”.`);
+      const label = m[1].trim();
+      const same = prev.find((o) => o.label.toLowerCase() === label.toLowerCase());
+      return { id: same?.id, label, odd: m[2].replace(",", ".") };
+    });
+}
+
+async function questions(body) {
+  const S = { date: nextDay(bolaoDay()), data: null, editing: null };
+  async function load() {
+    S.data = await api(`/admin/perguntas?date=${S.date}`);
+    paint();
+  }
+  function form(q) {
+    const kind = q?.kind ?? "pergunta";
+    const close = q ? new Date(q.closes_at) : new Date(Date.parse(S.date + "T21:00:00-03:00"));
+    return `<form class="card card-pad form" data-qform style="margin-bottom:14px">
+      <h3 style="margin:0">${q ? "Editar" : "Nova pergunta, jogo ou luta"}</h3>
+      <div class="cols2"><label class="f">Tipo<select name="kind">${Object.entries(S.data.tipos).map(([k, t]) => `<option value="${k}" ${k === kind ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="f">Fecha em (hora do seu aparelho)<input name="closes_at" type="datetime-local" value="${localInput(close)}" required></label></div>
+      <label class="f">Pergunta<input name="title" maxlength="160" value="${esc(q?.title ?? "")}" placeholder="${esc(KIND_HELP[kind].title)}" required></label>
+      <label class="f">Opções e odds (uma por linha: Nome = odd)<textarea name="options" rows="5" placeholder="${esc(KIND_HELP[kind].options)}" required>${esc(q ? optionsText(q.options) : "")}</textarea></label>
+      <p class="hint" style="margin:0">Acertar vale odd − 1 (ex.: 1.80 vale +0.80). As odds que você digita já são as que valem. Os pontos entram no ranking do mês e no geral.</p>
+      <div class="error" data-err role="alert"></div>
+      <div class="actions" style="margin:0"><button class="btn primary" type="submit">${q ? "Salvar alterações" : "Publicar"}</button>${q ? '<button class="btn" type="button" data-cancel>Cancelar</button>' : ""}</div>
+    </form>`;
+  }
+  function item(q) {
+    const total = q.respostas;
+    return `<div class="card card-pad" style="margin-bottom:12px">
+      <div class="m-head"><span class="tag">${esc(q.tipo)}</span><span>Fecha ${fmtWhen(q.closes_at)}</span><span class="tag">${total} resposta${total === 1 ? "" : "s"}</span>${q.voided ? '<span class="tag">Anulada</span>' : q.result ? '<span class="tag ok">Com resultado</span>' : ""}</div>
+      <h3 style="font-size:20px;margin:6px 0 10px">${esc(q.title)}</h3>
+      <div style="display:flex;flex-direction:column;gap:6px">${q.options
+        .map(
+          (o) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${esc(o.label)} · <b>${odd(o.odd)}</b> <span class="muted">(${q.counts?.[o.id] ?? 0})</span></span>
+            ${q.result === o.id ? '<span class="tag ok">Certa</span>' : `<button class="btn small" data-res="${esc(q.id)}" data-opt="${esc(o.id)}">Deu esta</button>`}</div>`,
+        )
+        .join("")}</div>
+      <div class="actions"><button class="btn small" data-edit-q="${esc(q.id)}">Editar</button>
+        ${q.voided || q.result ? `<button class="btn small" data-clear-q="${esc(q.id)}">Tirar resultado</button>` : `<button class="btn small danger" data-void-q="${esc(q.id)}">Anular</button>`}
+        <button class="btn small danger" data-del-q="${esc(q.id)}">Excluir</button></div>
+    </div>`;
+  }
+  function paint() {
+    const d = S.data;
+    const editing = S.editing && d.perguntas.find((x) => x.id === S.editing);
+    body.innerHTML = `
+      <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+        <label class="f" style="flex-grow:1">Dia do bolão<input type="date" value="${S.date}" data-qdate></label>
+        <p class="hint" style="margin:0;flex-basis:100%">Aparecem na tela de início, na seção “Perguntas do dia”, em cima dos jogos. Ninguém vê o que os outros escolheram até fechar.</p>
+      </div>
+      ${form(editing)}
+      <h2 class="section-title">${fmtDate(S.date)}<small>${d.perguntas.length} evento${d.perguntas.length === 1 ? "" : "s"}</small></h2>
+      ${d.perguntas.length ? d.perguntas.map(item).join("") : '<div class="card card-pad empty">Nenhuma pergunta neste dia ainda.</div>'}`;
+  }
+  body.addEventListener("change", (e) => {
+    if (e.target.matches("[data-qdate]")) {
+      S.date = e.target.value;
+      S.editing = null;
+      load().catch((err) => toast(err.message, "err"));
+    }
+    if (e.target.matches("[data-qform] select[name=kind]")) {
+      const f = e.target.form;
+      const h = KIND_HELP[e.target.value];
+      f.title.placeholder = h.title;
+      f.options.placeholder = h.options.replace(/\\n/g, "\n");
+    }
+  });
+  body.addEventListener("submit", async (e) => {
+    if (!e.target.matches("[data-qform]")) return;
+    e.preventDefault();
+    const f = e.target;
+    const err = $("[data-err]", f);
+    err.textContent = "";
+    const prev = S.editing ? S.data.perguntas.find((x) => x.id === S.editing)?.options ?? [] : [];
+    try {
+      const payload = { date: S.date, kind: f.kind.value, title: f.title.value, closes_at: new Date(f.closes_at.value).toISOString(), options: parseOptions(f.options.value, prev) };
+      if (S.editing) await api(`/admin/perguntas/${S.editing}`, { method: "PUT", body: payload });
+      else await api("/admin/perguntas", { method: "POST", body: payload });
+      toast(S.editing ? "Salvo." : "Publicada!", "ok");
+      S.editing = null;
+      await load();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  });
+  body.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.matches("[data-cancel]")) return ((S.editing = null), paint());
+    if (b.dataset.editQ) return ((S.editing = b.dataset.editQ), paint(), window.scrollTo(0, 0));
+    const go = (url, opts, msg) => busy(b, async () => (await api(url, opts), toast(msg, "ok"), await load()));
+    if (b.dataset.res && confirm("Marcar esta opção como a certa? Os pontos são calculados na hora.")) go(`/admin/perguntas/${b.dataset.res}/resultado`, { method: "POST", body: { option_id: b.dataset.opt } }, "Resultado salvo e pontos calculados.");
+    if (b.dataset.voidQ && confirm("Anular? Ninguém pontua nela.")) go(`/admin/perguntas/${b.dataset.voidQ}/resultado`, { method: "POST", body: { anular: true } }, "Anulada.");
+    if (b.dataset.clearQ) go(`/admin/perguntas/${b.dataset.clearQ}/resultado`, { method: "POST", body: { limpar: true } }, "Resultado retirado.");
+    if (b.dataset.delQ && confirm("Excluir esta pergunta e todas as respostas dela?")) go(`/admin/perguntas/${b.dataset.delQ}`, { method: "DELETE" }, "Excluída.");
+  });
+  await load();
+}
+
 // ---------- usuários ----------
+
+/** O admin muda apelido e telefone de qualquer pessoa e pode liberar uma nova alteração do perfil. */
+function editUser(u, done) {
+  if (!u) return;
+  const feitas = Object.keys(u.edits ?? {}).filter((k) => u.edits[k]);
+  const s = openSheet(`<h3 style="font-size:26px;margin-bottom:6px">Editar ${esc(u.nickname)}</h3>
+    <p class="muted">${esc(u.email)}</p>
+    <form class="form" id="eu">
+      <label class="f">Apelido<input name="nickname" value="${esc(u.nickname)}" minlength="2" maxlength="20" required></label>
+      <label class="f">Telefone<input name="phone" inputmode="tel" value="${esc(u.phone ? fmtPhone(u.phone) : "")}" placeholder="(11) 91234-5678"></label>
+      ${feitas.length ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="liberar" style="width:auto"> Liberar nova alteração (já alterou: ${feitas.map((k) => ({ nickname: "apelido", phone: "telefone", password: "senha" })[k]).join(", ")})</label>` : ""}
+      <div class="error" data-err role="alert"></div>
+      <button class="btn primary block" type="submit">Salvar</button></form>`);
+  $("#eu", s.el).onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api(`/admin/usuarios/${u.id}`, { method: "PATCH", body: { nickname: fd.get("nickname"), phone: fd.get("phone"), liberar: fd.get("liberar") === "on" } });
+      s.close();
+      toast("Salvo.", "ok");
+      done();
+    } catch (err) {
+      $("[data-err]", s.el).textContent = err.message;
+    }
+  };
+}
 
 const fmtPhone = (d) => (d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : d);
 
 async function users(body) {
+  let LIST = [];
+  const EDITS = { nickname: "apelido", phone: "telefone", password: "senha" };
   async function load() {
     const d = await api("/admin/usuarios");
+    LIST = d.usuarios;
     body.innerHTML = `<div class="card" style="overflow:hidden">${d.usuarios
       .map(
-        (u) => `<div class="list-row">${avatar(u.nickname)}<div class="grow"><b>${esc(u.nickname)}</b> <span class="muted">${esc(u.name)}</span><div class="muted" style="font-size:12px">${esc(u.email)}${u.phone ? " · " + esc(fmtPhone(u.phone)) : ""}</div></div>
+        (u) => `<div class="list-row">${avatar(u.nickname)}<div class="grow"><b>${esc(u.nickname)}</b> ${u.name !== u.nickname ? `<span class="muted">${esc(u.name)}</span>` : ""}<div class="muted" style="font-size:12px">${esc(u.email)}${u.phone ? " · " + esc(fmtPhone(u.phone)) : ""}</div>${Object.keys(u.edits ?? {}).filter((k) => u.edits[k]).length ? `<div class="muted" style="font-size:12px">já alterou: ${Object.keys(u.edits).filter((k) => u.edits[k]).map((k) => EDITS[k]).join(", ")}</div>` : ""}</div>
         <span class="tag ${u.role === "admin" ? "joker" : ""}">${u.role === "admin" ? "admin" : "jogador"}</span>
-        ${u.id === state.user.id ? '<span class="tag">você</span>' : `<button class="btn small" data-role="${u.role === "admin" ? "player" : "admin"}" data-id="${esc(u.id)}">${u.role === "admin" ? "Tirar admin" : "Tornar admin"}</button><button class="btn small danger" data-del="${esc(u.id)}" data-name="${esc(u.nickname)}">Remover</button>`}</div>`,
+        <button class="btn small" data-edit="${esc(u.id)}">Editar</button>${u.id === state.user.id ? '<span class="tag">você</span>' : `<button class="btn small" data-role="${u.role === "admin" ? "player" : "admin"}" data-id="${esc(u.id)}">${u.role === "admin" ? "Tirar admin" : "Tornar admin"}</button><button class="btn small danger" data-del="${esc(u.id)}" data-name="${esc(u.nickname)}">Remover</button>`}</div>`,
       )
       .join("")}</div>`;
   }
   body.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.dataset.edit) editUser(LIST.find((x) => x.id === b.dataset.edit), load);
     if (b.dataset.role) busy(b, async () => (await api(`/admin/usuarios/${b.dataset.id}/papel`, { method: "POST", body: { role: b.dataset.role } }), load()));
     if (b.dataset.del && confirm(`Remover ${b.dataset.name}? A conta e os palpites dessa pessoa serão apagados.`)) busy(b, async () => (await api(`/admin/usuarios/${b.dataset.del}`, { method: "DELETE" }), load()));
   });

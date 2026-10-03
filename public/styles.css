@@ -360,3 +360,19 @@ input, select, textarea { font-size: 16px; }
 .pw-eye.on .eye-on { display: none; }
 .pw-eye.on .eye-off { display: block; }
 .pw-eye.on { color: var(--brand); }
+
+/* placar ao vivo e tabela de ganho por rodada */
+.team .sc.live { color: var(--bad); }
+.matrix { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.matrix .table { min-width: 100%; width: max-content; }
+.matrix th:first-child, .matrix td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.matrix tr.me td:first-child { background: var(--surface-2); }
+.matrix td.best { color: var(--hit); font-weight: 700; }
+.matrix td.none { color: var(--ink-3); }
+.matrix .who { white-space: nowrap; }
+
+/* perguntas do dia */
+.q-ev .q-title { font-family: var(--font-display); font-size: var(--t-xl); font-weight: 700; line-height: 1.15; margin: 6px 0 12px; }
+.odds.cq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.q-ev .odd span small { font-weight: 400; }
+.qday { margin-bottom: 18px; }

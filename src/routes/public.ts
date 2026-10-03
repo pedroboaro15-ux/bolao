@@ -1,9 +1,13 @@
 import { Hono } from "hono";
 import { setCookie, deleteCookie } from "hono/cookie";
 import { COOKIE, forgetUser, sessionCookie, type AppEnv } from "../http";
-import { HttpError, badRequest } from "../lib/errors";
+import { HttpError, badRequest, conflict } from "../lib/errors";
+import { nicknameTaken, parseNickname, parsePhone, uniqueNickname } from "../lib/profile";
+import { emailKey, limitsOf, takeSlot, waitText } from "../lib/ratelimit";
 import type { UserDoc } from "../types";
 import type { AuthProvider } from "../auth/provider";
+
+export { parsePhone };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -17,15 +21,8 @@ function setSession(c: any, cookie: string, maxAgeSec: number) {
   });
 }
 
-export const userView = (id: string, u: UserDoc) => ({ id, name: u.name, nickname: u.nickname, email: u.email, role: u.role });
-
-/** Telefone brasileiro: só dígitos, com DDD (10 ou 11 dígitos). Aceita +55 na frente. */
-export function parsePhone(raw: unknown): string {
-  let d = String(raw ?? "").replace(/\D/g, "");
-  if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
-  if (d.length !== 10 && d.length !== 11) throw badRequest("Telefone inválido. Use o DDD e o número, por exemplo (11) 91234-5678");
-  return d;
-}
+/** O usuário como o navegador vê (o telefone só vai para a própria pessoa e para o admin). */
+export const userView = (id: string, u: UserDoc) => ({ id, name: u.name, nickname: u.nickname, email: u.email, phone: u.phone ?? null, role: u.role, edits: u.edits ?? {} });
 
 /** Apelido sugerido a partir do e-mail (a pessoa pode digitar o seu no cadastro). */
 function nicknameFromEmail(email: string): string {
@@ -42,14 +39,14 @@ export function parseSignup(body: any) {
   if (!EMAIL_RE.test(email)) throw badRequest("E-mail inválido");
   if (password.length < 8 || password.length > 100) throw badRequest("A senha deve ter pelo menos 8 caracteres");
   if (password !== confirm) throw badRequest("As senhas não são iguais");
-  if (typed && (typed.length < 2 || typed.length > 20)) throw badRequest("O apelido deve ter de 2 a 20 letras");
-  const nickname = typed || nicknameFromEmail(email);
-  return { name: nickname, nickname, email, phone, password };
+  const nickname = typed ? parseNickname(typed) : nicknameFromEmail(email);
+  return { name: nickname, nickname, typedNickname: !!typed, email, phone, password };
 }
 
 /**
  * Cadastro aberto: cria a conta no Auth e grava users/{uid}. O Auth garante que o e-mail é único;
- * se a gravação do perfil falhar, a conta recém-criada é apagada.
+ * se a gravação do perfil falhar, a conta recém-criada é apagada. Apelido repetido: se a pessoa digitou, recusa;
+ * se foi sugerido pelo e-mail, acrescenta um número.
  */
 export async function signUp(
   ctx: { repo: import("../db/repo").Repo; auth: AuthProvider },
@@ -57,8 +54,14 @@ export async function signUp(
   now = new Date(),
 ) {
   const { repo, auth } = ctx;
-  const uid = await auth.createUser(input.email, input.password, input.nickname);
-  const user: UserDoc = { name: input.name, nickname: input.nickname, email: input.email, phone: input.phone, role: "player", created_at: now };
+  const users = await repo.users();
+  let nickname = input.nickname;
+  if (input.typedNickname) {
+    if (nicknameTaken(users, nickname)) throw conflict("Esse apelido já está em uso. Escolha outro.");
+  } else nickname = uniqueNickname(users, nickname);
+
+  const uid = await auth.createUser(input.email, input.password, nickname);
+  const user: UserDoc = { name: nickname, nickname, email: input.email, phone: input.phone, role: "player", created_at: now };
   try {
     await repo.db.commit([{ op: "set", path: `users/${uid}`, data: user as any, mustNotExist: true }]);
   } catch (e) {
@@ -71,13 +74,18 @@ export async function signUp(
 export function publicRoutes() {
   const r = new Hono<AppEnv>();
 
+  // Login: 5 tentativas erradas por conta a cada 15 minutos. Acertar a senha zera a contagem; errar a 6ª vez já cai no bloqueio.
   r.post("/entrar", async (c) => {
     const body: any = await c.req.json().catch(() => ({}));
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
     if (!EMAIL_RE.test(email) || !password) throw badRequest("Informe e-mail e senha");
     const { repo, auth } = c.get("ctx");
+    const lim = limitsOf(c.env);
+    const slot = await takeSlot(repo.db, `login:${await emailKey(email)}`, lim.loginFails, lim.loginWindowMs);
+    if (!slot.ok) throw new HttpError(429, `Muitas tentativas erradas. Por segurança, o login desta conta fica bloqueado por ${waitText(slot.resetAt)}.`);
     const s = await auth.signIn(email, password);
+    await slot.clear(); // acertou: os erros anteriores desta conta deixam de contar
     const user = await repo.user(s.uid);
     if (!user) throw new HttpError(403, "Conta sem acesso. Crie sua conta na tela de cadastro.");
     setSession(c, s.cookie, s.maxAgeSec);
@@ -89,11 +97,15 @@ export function publicRoutes() {
     return c.json({ ok: true });
   });
 
-  // Resposta igual exista o e-mail ou não.
+  // Resposta igual exista o e-mail ou não (e no máximo 3 pedidos por hora para o mesmo e-mail).
   r.post("/senha/esqueci", async (c) => {
     const body: any = await c.req.json().catch(() => ({}));
     const email = String(body.email ?? "").trim().toLowerCase();
-    if (EMAIL_RE.test(email)) await c.get("ctx").auth.sendPasswordReset(email);
+    if (EMAIL_RE.test(email)) {
+      const { auth, repo } = c.get("ctx");
+      const slot = await takeSlot(repo.db, `forgot:${await emailKey(email)}`, 3, 3600_000);
+      if (slot.ok) await auth.sendPasswordReset(email);
+    }
     return c.json({ ok: true });
   });
 
@@ -108,9 +120,13 @@ export function publicRoutes() {
     return c.json({ ok: true });
   });
 
+  // Cadastro: no máximo 2 por minuto no site todo (padrão). Cadastro com dados inválidos não gasta vaga.
   r.post("/cadastro", async (c) => {
     const input = parseSignup(await c.req.json().catch(() => ({})));
     const ctx = c.get("ctx");
+    const lim = limitsOf(c.env);
+    const slot = await takeSlot(ctx.repo.db, "signup", lim.signupPerMinute, 60_000);
+    if (!slot.ok) throw new HttpError(429, `Muitos cadastros neste minuto. Tente de novo em ${waitText(slot.resetAt)}.`);
     const uid = await signUp(ctx, input);
     forgetUser(uid);
     const s = await ctx.auth.signIn(input.email, input.password);

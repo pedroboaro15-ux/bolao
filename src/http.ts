@@ -64,6 +64,8 @@ export function matchView(m: WithId<Match>, mine: Prediction | null, settings: S
     settled: m.voided || (m.home_goals !== null && m.away_goals !== null),
     home_goals: m.home_goals,
     away_goals: m.away_goals,
+    // Placar ao vivo: só enquanto o jogo rola e ainda não tem resultado oficial.
+    live: locked && !m.voided && m.home_goals === null && m.live ? { home: m.live.home, away: m.live.away, status: m.live.status, elapsed: m.live.elapsed } : null,
     odds_1x2: odds?.["1X2"]?.fair ?? null,
     odds_ou: odds?.OU25?.fair ?? null,
     cs: odds?.["1X2"] || odds?.CS ? csTable(odds, settings.oddCap) : null,

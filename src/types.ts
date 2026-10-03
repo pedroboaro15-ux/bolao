@@ -13,6 +13,9 @@ export interface Env {
   VAPID_SUBJECT: string;
   /** "1" = modo demonstração (banco em memória + login falso). Só vale em localhost. */
   DEV_MEMORY?: string;
+  /** Limites (opcionais; padrão 2 cadastros por minuto e 5 tentativas de login por conta a cada 15 min). */
+  LIMIT_SIGNUP_PER_MIN?: string;
+  LIMIT_LOGIN_FAILS?: string;
 }
 
 export type Pick1x2 = "1" | "X" | "2";
@@ -69,6 +72,7 @@ export interface Match {
   scored?: boolean;
   /** Extras (gols / placar exato) que valiam quando o jogo começou; antes disso vale a configuração atual. */
   extras_frozen?: { ou: boolean; cs: boolean } | null;
+  live?: LiveInfo | null;
 }
 
 export type RoundStatus = "draft" | "open" | "closed" | "finished";
@@ -110,6 +114,52 @@ export interface UserDoc {
   phone?: string | null;
   role: "admin" | "player";
   created_at: Date;
+  /** O que a pessoa já alterou no próprio perfil. Cada item só pode ser alterado uma vez (depois, só o admin). */
+  edits?: ProfileEdits | null;
+}
+
+export interface ProfileEdits {
+  nickname?: boolean;
+  phone?: boolean;
+  password?: boolean;
+}
+
+/** Placar ao vivo (atualizado por demanda; o resultado oficial continua vindo do cron). */
+export interface LiveInfo {
+  home: number | null;
+  away: number | null;
+  /** Status curto da API-Football: 1H, HT, 2H, ET, P, FT... */
+  status: string;
+  elapsed: number | null;
+  at: Date;
+}
+
+export type QuestionKind = "pergunta" | "basquete" | "ufc";
+
+/** Pergunta do dia (ou jogo de basquete / luta do UFC) com odds escolhidas pelo admin. */
+export interface Question {
+  /** Dia do bolão (AAAA-MM-DD). */
+  date: string;
+  kind: QuestionKind;
+  title: string;
+  options: { id: string; label: string; odd: number }[];
+  /** Até quando dá para responder (depois disso trava e aparecem as escolhas de todos). */
+  closes_at: Date;
+  /** id da opção certa; null enquanto não tem resultado. */
+  result: string | null;
+  voided: boolean;
+  created_at: Date;
+}
+
+export interface Answer {
+  question_id: string;
+  user_id: string;
+  date: string;
+  option_id: string;
+  points: number | null;
+  hits: number | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface StandingRow {

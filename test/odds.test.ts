@@ -59,6 +59,43 @@ describe("Poisson ajustado ao mercado", () => {
     expect(p.over25).toBeLessThan(0.58);
   });
 
+  it("a busca rápida acha o mesmo ponto da grade fina antiga (e faz bem menos contas)", () => {
+    // Referência: a busca antiga (grade de 0,1 e depois de 0,01), que gastava ~2.500 avaliações.
+    const referencia = (fair: Record<string, number>, ou?: Record<string, number>) => {
+      const s = 1 / fair["1"] + 1 / fair.X + 1 / fair["2"];
+      const t = { home: 1 / fair["1"] / s, draw: 1 / fair.X / s, away: 1 / fair["2"] / s };
+      const tOver = ou ? 1 / ou.over / (1 / ou.over + 1 / ou.under) : undefined;
+      const loss = (lh: number, la: number) => {
+        const p = outcomeProbs(lh, la);
+        let l = (p.home - t.home) ** 2 + (p.draw - t.draw) ** 2 + (p.away - t.away) ** 2;
+        if (tOver !== undefined) l += (p.over25 - tOver) ** 2;
+        return l;
+      };
+      let best = { lh: 1.3, la: 1.1, l: Infinity };
+      for (let lh = 0.1; lh <= 4.5; lh += 0.1) for (let la = 0.1; la <= 4.5; la += 0.1) if (loss(lh, la) < best.l) best = { lh, la, l: loss(lh, la) };
+      const c = best;
+      for (let lh = Math.max(0.02, c.lh - 0.1); lh <= c.lh + 0.1; lh += 0.01) for (let la = Math.max(0.02, c.la - 0.1); la <= c.la + 0.1; la += 0.01) if (loss(lh, la) < best.l) best = { lh, la, l: loss(lh, la) };
+      return best;
+    };
+    const casos: [Record<string, number>, Record<string, number>?][] = [
+      [{ "1": 3.48, X: 3.64, "2": 2.12 }, { over: 1.95, under: 1.9 }],
+      [{ "1": 1.3, X: 5.5, "2": 10 }],
+      [{ "1": 2.4, X: 3.2, "2": 3.1 }, { over: 2.1, under: 1.75 }],
+      [{ "1": 1.1, X: 9, "2": 25 }, { over: 1.5, under: 2.6 }],
+      [{ "1": 5, X: 3.4, "2": 1.8 }],
+    ];
+    for (const [fair, ou] of casos) {
+      const ref = referencia(fair, ou);
+      const novo = fitPoisson(fair, ou);
+      // o que importa é reproduzir as probabilidades do mercado, não o ponto exato da grade
+      const pn = outcomeProbs(novo.lh, novo.la);
+      const pr = outcomeProbs(ref.lh, ref.la);
+      expect(pn.home).toBeCloseTo(pr.home, 2);
+      expect(pn.draw).toBeCloseTo(pr.draw, 2);
+      expect(pn.over25).toBeCloseTo(pr.over25, 2);
+    }
+  });
+
   it("favorito forte tem mais gols esperados", () => {
     const { lh, la } = fitPoisson({ "1": 1.3, X: 5.5, "2": 10 });
     expect(lh).toBeGreaterThan(la);

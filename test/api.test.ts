@@ -4,7 +4,8 @@ import type { Env } from "../src/types";
 
 // Modo demo: banco em memória com dados de mentira (rodada de ontem encerrada + rodada de hoje aberta).
 const app = createApp();
-const env = { DEV_MEMORY: "1" } as unknown as Env;
+// Os testes de cadastro criam várias contas no mesmo minuto: o limite padrão (2 por minuto) é testado em test/limits.test.ts.
+const env = { DEV_MEMORY: "1", LIMIT_SIGNUP_PER_MIN: "100" } as unknown as Env;
 const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext;
 
 const call = (path: string, init: { method?: string; user?: string; body?: unknown } = {}) =>
@@ -178,9 +179,9 @@ describe("cadastro aberto", () => {
   });
 
   it("usa o apelido digitado e aceita +55 no telefone", async () => {
-    const ok = await call("/api/cadastro", { method: "POST", body: { ...signup, email: "ana2@demo.local", phone: "+55 21 98888-7777", nickname: "Aninha" } });
+    const ok = await call("/api/cadastro", { method: "POST", body: { ...signup, email: "ana2@demo.local", phone: "+55 21 98888-7777", nickname: "Fulaninha" } });
     expect(ok.status).toBe(201);
-    expect((await json(ok)).usuario.nickname).toBe("Aninha");
+    expect((await json(ok)).usuario.nickname).toBe("Fulaninha");
   });
 
   it("recusa senhas diferentes, senha curta, telefone ou e-mail inválidos", async () => {

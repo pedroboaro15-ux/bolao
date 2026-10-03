@@ -129,9 +129,10 @@ function toggleTheme() {
 function userMenu() {
   const u = state.user;
   const s = openSheet(`
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">${avatar(u.nickname, "lg")}<div><h3 style="font-size:24px">${esc(u.name)}</h3><div class="muted">${esc(u.email)} · ${u.role === "admin" ? "administrador" : "jogador"}</div></div></div>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">${avatar(u.nickname, "lg")}<div><h3 style="font-size:24px">${esc(u.nickname)}</h3><div class="muted">${esc(u.email)} · ${u.role === "admin" ? "administrador" : "jogador"}</div></div></div>
     <div class="actions" style="flex-direction:column">
       <a class="btn" data-link data-close href="/palpites">Meus palpites e estatísticas</a>
+      <button class="btn" data-act="profile">Editar perfil (apelido, telefone, senha)</button>
       <button class="btn" data-act="howto">Como ativar notificações no iPhone</button>
       <button class="btn danger" data-act="out">Sair</button>
     </div>`);
@@ -141,10 +142,92 @@ function userMenu() {
     s.close();
     go("/entrar", { replace: true });
   };
+  $("[data-act=profile]", s.el).onclick = () => {
+    s.close();
+    profileSheet();
+  };
   $("[data-act=howto]", s.el).onclick = () => {
     s.close();
     iosHowTo();
   };
+}
+
+// ---------- editar perfil: apelido, telefone e senha, uma vez cada ----------
+
+async function profileSheet() {
+  let u = state.user;
+  try {
+    u = (await api("/eu")).usuario ?? u;
+    state.user = u;
+  } catch {}
+  const sheet = openSheet(`<div data-profile></div>`);
+  const box = $("[data-profile]", sheet.el);
+  const used = (k) => !!u.edits?.[k];
+  const note = (k, what) => (used(k) ? `<p class="hint">Você já alterou ${what}. Para mudar de novo, peça ao administrador.</p>` : `<p class="hint">Só dá para alterar ${what} <b>uma vez</b>. Depois, só o administrador altera.</p>`);
+  const WHAT = { nickname: "o apelido", phone: "o telefone", senha: "a senha" };
+
+  function paintBox() {
+    box.innerHTML = `
+      <h3 style="font-size:26px;margin-bottom:4px">Editar perfil</h3>
+      <p class="muted" style="margin-bottom:12px">${esc(u.email)}</p>
+      <form class="form card card-pad" data-form="nickname" style="margin-bottom:12px">
+        <label class="f">Apelido (aparece no ranking)<input name="nickname" value="${esc(u.nickname)}" minlength="2" maxlength="20" required ${used("nickname") ? "disabled" : ""}></label>
+        ${note("nickname", "o apelido")}
+        <div class="error" data-err role="alert"></div>
+        <button class="btn primary" type="submit" ${used("nickname") ? "disabled" : ""}>Salvar apelido</button>
+      </form>
+      <form class="form card card-pad" data-form="phone" style="margin-bottom:12px">
+        <label class="f">Telefone (com DDD)<input name="phone" type="tel" inputmode="tel" value="${esc(fmtPhone(u.phone))}" placeholder="(11) 91234-5678" required ${used("phone") ? "disabled" : ""}></label>
+        ${note("phone", "o telefone")}
+        <div class="error" data-err role="alert"></div>
+        <button class="btn primary" type="submit" ${used("phone") ? "disabled" : ""}>Salvar telefone</button>
+      </form>
+      <form class="form card card-pad" data-form="senha" style="margin-bottom:12px">
+        ${
+          used("password")
+            ? `<h4 style="margin:0">Senha</h4>${note("password", "a senha")}`
+            : `${pwField("atual", "Senha atual", "current-password")}${pwField("nova", "Senha nova (mínimo 8 caracteres)", "new-password", 'minlength="8"')}${pwField("confirmar", "Repita a senha nova", "new-password", 'minlength="8"')}${note("password", "a senha")}
+               <div class="error" data-err role="alert"></div>
+               <button class="btn primary" type="submit">Salvar senha</button>`
+        }
+      </form>
+      <div class="actions"><button class="btn block" data-close>Fechar</button></div>`;
+    wirePasswordEyes(box);
+    const phone = $("input[name=phone]", box);
+    if (phone) phone.oninput = maskPhone;
+    box.querySelectorAll("form[data-form]").forEach((f) => {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const kind = f.dataset.form;
+        const fd = Object.fromEntries(new FormData(f));
+        const err = $("[data-err]", f);
+        if (err) err.textContent = "";
+        if (kind === "senha" && fd.nova !== fd.confirmar) return (err.textContent = "As senhas não são iguais.");
+        if (!confirm(`Só dá para alterar ${WHAT[kind]} uma vez. Confirmar a alteração?`)) return;
+        const btn = $("button[type=submit]", f);
+        btn.disabled = true;
+        try {
+          if (kind === "senha") {
+            await api("/perfil/senha", { method: "POST", body: fd });
+            u = { ...u, edits: { ...u.edits, password: true } };
+            toast("Senha alterada!", "ok");
+          } else {
+            const r = await api("/perfil", { method: "PUT", body: kind === "nickname" ? { nickname: fd.nickname } : { phone: fd.phone } });
+            u = r.usuario;
+            toast(kind === "nickname" ? "Apelido alterado!" : "Telefone alterado!", "ok");
+          }
+          state.user = { ...state.user, ...u };
+          const chip = $(".chip-user span");
+          if (chip) chip.textContent = u.nickname;
+          paintBox();
+        } catch (ex) {
+          if (err) err.textContent = ex.message;
+          btn.disabled = false;
+        }
+      };
+    });
+  }
+  paintBox();
 }
 
 // ---------- notificações (Web Push) ----------
@@ -184,6 +267,14 @@ async function enablePush() {
 }
 
 // ---------- telas de acesso ----------
+
+/** (11) 91234-5678 enquanto a pessoa digita. */
+const fmtPhone = (raw) => {
+  const d = String(raw ?? "").replace(/\D/g, "").slice(0, 11);
+  const cut = d.length > 10 ? 7 : 6;
+  return d.length > cut ? `(${d.slice(0, 2)}) ${d.slice(2, cut)}-${d.slice(cut)}` : d.length > 2 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : d;
+};
+const maskPhone = (e) => (e.target.value = fmtPhone(e.target.value));
 
 const EYE = '<svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 
@@ -313,11 +404,7 @@ function signupPage(view) {
       <a data-link href="/entrar" class="muted" style="text-align:center">Já tenho conta · Entrar</a>
     </form>`);
   wirePasswordEyes(view);
-  $("input[name=phone]", view).oninput = (e) => {
-    const d = e.target.value.replace(/\D/g, "").slice(0, 11);
-    const cut = d.length > 10 ? 7 : 6;
-    e.target.value = d.length > cut ? `(${d.slice(0, 2)}) ${d.slice(2, cut)}-${d.slice(cut)}` : d.length > 2 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : d;
-  };
+  $("input[name=phone]", view).oninput = maskPhone;
   $("#f").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("button[type=submit]", view);

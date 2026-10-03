@@ -98,6 +98,9 @@ async function seed() {
     ...todayMatches.map(([id, m]) => ({ op: "set" as const, path: `matches/${id}`, data: m as any })),
   ]);
 
+  // Placar ao vivo do jogo que está rolando (no modo demo não há API para atualizar)
+  await db.commit([{ op: "merge", path: "matches/900202", data: { live: { home: 1, away: 0, status: "2H", elapsed: 63, at: new Date(now) } } }]);
+
   // Palpites
   const pred = (user: string, matchId: string, roundId: string, p: Partial<Prediction>): Prediction => ({
     user_id: user,

@@ -7,6 +7,8 @@ export interface AuthProvider {
   signIn(email: string, password: string): Promise<{ uid: string; cookie: string; maxAgeSec: number }>;
   createUser(email: string, password: string, displayName: string): Promise<string>;
   deleteUser(uid: string): Promise<void>;
+  /** Troca a senha de uma conta (quem chama já conferiu a senha antiga). */
+  updatePassword(uid: string, password: string): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
   /** Define a senha nova a partir do link do e-mail de recuperação (o `access_token` que vem no link). */
   setPassword(accessToken: string, password: string): Promise<void>;
@@ -80,6 +82,7 @@ export class SupabaseAuth implements AuthProvider {
     url: string,
     private key: string,
     private sessionSecret: string,
+    // Não guardar o `fetch` global direto: no Cloudflare ele quebra ("Illegal invocation") quando chamado como método do objeto.
     private fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.base = `${url.replace(/\/+$/, "")}/auth/v1`;
@@ -117,6 +120,11 @@ export class SupabaseAuth implements AuthProvider {
 
   async deleteUser(uid: string) {
     await this.call(`/admin/users/${encodeURIComponent(uid)}`, { method: "DELETE" });
+  }
+
+  async updatePassword(uid: string, password: string) {
+    if (password.length < 8) throw badRequest("A senha deve ter pelo menos 8 caracteres");
+    await this.call(`/admin/users/${encodeURIComponent(uid)}`, { method: "PUT", body: JSON.stringify({ password }) });
   }
 
   async sendPasswordReset(email: string) {
@@ -158,6 +166,10 @@ export class DevAuth implements AuthProvider {
   }
   async deleteUser(uid: string) {
     for (const [email, u] of this.users) if (u.uid === uid) this.users.delete(email);
+  }
+  async updatePassword(uid: string, password: string) {
+    if (password.length < 8) throw badRequest("A senha deve ter pelo menos 8 caracteres");
+    for (const u of this.users.values()) if (u.uid === uid) u.password = password;
   }
   async sendPasswordReset() {}
   async setPassword() {}

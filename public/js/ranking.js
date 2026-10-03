@@ -1,5 +1,5 @@
 // Ranking (ref. 1: líder em destaque + blocos de números), meus palpites e detalhe do jogo.
-import { api, avatar, crest, esc, fmtDate, fmtMonth, fmtWhen, icon, leagueIcon, odd, pts, signed, zebraBlock, zebraLabel } from "./util.js";
+import { api, avatar, crest, esc, fmtDate, fmtMonth, fmtWhen, icon, leagueIcon, liveLabel, odd, pts, signed, zebraBlock, zebraLabel } from "./util.js";
 import { state } from "./store.js";
 import { openTeam } from "./team.js";
 
@@ -10,7 +10,7 @@ const fail = (view, e) => (view.innerHTML = `<div class="page narrow"><div class
 const rankOf = (rows, i) => 1 + rows.filter((r) => r.points > rows[i].points || (r.points === rows[i].points && r.hits > rows[i].hits)).length;
 
 export function renderRanking(view) {
-  const S = { escopo: "geral", id: "", tipo: "pontos", data: null };
+  const S = { escopo: "geral", id: "", tipo: "pontos", data: null, perRound: null };
   view.innerHTML = `<div class="page narrow"><p class="boot">Carregando ranking…</p></div>`;
 
   async function load() {
@@ -21,6 +21,38 @@ export function renderRanking(view) {
     } catch (e) {
       fail(view, e);
     }
+  }
+
+  async function loadPerRound() {
+    try {
+      S.perRound = await api("/ranking/rodadas");
+    } catch {
+      S.perRound = { rodadas: [], participantes: [] }; // é só um complemento
+    }
+    if (S.tipo === "pontos" && S.data) paint();
+  }
+
+  /** Quanto cada participante fez em cada uma das últimas rodadas (melhor de cada rodada em destaque). */
+  function perRoundCard() {
+    const pr = S.perRound;
+    if (!pr) return "";
+    const me = state.user.id;
+    if (!pr.rodadas.length || !pr.participantes.length) return "";
+    const best = Object.fromEntries(pr.rodadas.map((r) => [r.id, Math.max(...pr.participantes.map((p) => p.porRodada[r.id] ?? -Infinity))]));
+    return `<h2 class="section-title" style="margin-top:22px">Ganho por rodada<small>últimas ${pr.rodadas.length}</small></h2>
+      <div class="card matrix"><table class="table"><thead><tr><th>Participante</th>${pr.rodadas.map((r) => `<th class="r" title="${esc(r.title)}">${fmtDate(r.date).slice(0, 5)}</th>`).join("")}<th class="r">Total</th></tr></thead><tbody>
+        ${pr.participantes
+          .map(
+            (p) => `<tr class="${p.user_id === me ? "me" : ""}"><td><span class="who">${avatar(p.nickname)}${esc(p.nickname)}</span></td>${pr.rodadas
+              .map((r) => {
+                const v = p.porRodada[r.id];
+                return v == null ? `<td class="r none">–</td>` : `<td class="r num ${v === best[r.id] && v > 0 ? "best" : ""}">${pts(v)}</td>`;
+              })
+              .join("")}<td class="r pts-cell">${pts(p.total)}</td></tr>`,
+          )
+          .join("")}
+      </tbody></table></div>
+      <p class="muted" style="font-size:12px;margin-top:8px">Em verde, o melhor de cada rodada. “–” = não participou daquela rodada.</p>`;
   }
 
   function paint() {
@@ -86,6 +118,7 @@ export function renderRanking(view) {
             : `<div class="empty">Ainda não há pontos aqui. O ranking aparece quando os primeiros jogos terminarem.</div>`
         }
       </div>
+      ${perRoundCard()}
       ${rows.length ? `<div class="actions"><a class="btn" target="_blank" rel="noopener" href="${whatsapp(d, rows)}">${icon("share").replace("<svg", '<svg width="16" height="16"')} Compartilhar no WhatsApp</a></div>` : ""}
       <p class="muted" style="font-size:12px;margin-top:14px">Cada acerto vale o lucro da odd justa (odd − 1). Desempate: mais acertos.${d.updated_at ? ` Atualizado ${fmtWhen(d.updated_at)}.` : ""}</p>`}
     </div>`;
@@ -111,6 +144,7 @@ export function renderRanking(view) {
     }
   });
   load();
+  loadPerRound();
 }
 
 function whatsapp(d, rows) {
@@ -163,7 +197,10 @@ export async function renderMine(view) {
       byRound.size
         ? [...byRound.values()]
             .map(
-              (g) => `<div class="group"><div class="group-h" style="cursor:default"><b>${esc(g.rodada.title)}</b><span class="cnt">${fmtDate(g.rodada.date)}</span></div>
+              (g) => {
+                const ganho = g.items.reduce((s, it) => s + (it.palpite.points ?? 0), 0);
+                const fechada = g.items.some((it) => it.palpite.points != null);
+                return `<div class="group"><div class="group-h" style="cursor:default"><b>${esc(g.rodada.title)}</b><span class="cnt">${fmtDate(g.rodada.date)}${fechada ? ` · ganho <b style="color:${ganho > 0 ? "var(--hit)" : "inherit"}">${ganho > 0 ? signed(ganho) : "0.00"}</b>` : ""}</span></div>
               <div class="matches">${g.items
                 .map((it) => {
                   const j = it.jogo;
@@ -175,7 +212,8 @@ export async function renderMine(view) {
                     <span class="info"><b>${esc(j.home.name)} ${done ? `${j.home_goals} - ${j.away_goals}` : "x"} ${esc(j.away.name)}</b><small>${esc(pickText(j, p))}${j.voided ? " · anulado" : ""}</small></span>
                     <span class="pts-cell ${cls}" style="color:${p.points > 0 ? "var(--hit)" : "var(--muted-2)"}">${p.points == null ? "—" : signed(p.points)}</span></a>`;
                 })
-                .join("")}</div></div>`,
+                .join("")}</div></div>`;
+              },
             )
             .join("")
         : `<div class="card card-pad empty">Você ainda não fez palpites. <a data-link href="/">Ir para a rodada</a></div>`
@@ -208,7 +246,7 @@ export async function renderMatch(view, id) {
       <div class="muted" style="display:flex;justify-content:center;gap:8px;align-items:center;margin-bottom:12px">${leagueIcon(j.league)} ${esc(j.league.name)} · ${fmtWhen(j.kickoff_utc)}</div>
       <div class="row">
         <button class="team col" data-team="home">${crest(j.home, "xl")}<span class="tn">${esc(j.home.name)}</span></button>
-        <div>${done ? `<div class="final">${j.home_goals} - ${j.away_goals}</div><span class="tag ${j.voided ? "" : "ok"}">${j.voided ? "Anulado" : "Final"}</span>` : `<div class="final" style="font-size:38px">${j.locked ? "x" : "vs"}</div>${j.locked ? '<span class="tag live">Em andamento</span>' : ""}`}</div>
+        <div>${done ? `<div class="final">${j.home_goals} - ${j.away_goals}</div><span class="tag ${j.voided ? "" : "ok"}">${j.voided ? "Anulado" : "Final"}</span>` : j.live ? `<div class="final">${j.live.home ?? 0} - ${j.live.away ?? 0}</div><span class="tag live">${esc(liveLabel(j.live))}</span>` : `<div class="final" style="font-size:38px">${j.locked ? "x" : "vs"}</div>${j.locked ? '<span class="tag live">Em andamento</span>' : ""}`}</div>
         <button class="team col" data-team="away">${crest(j.away, "xl")}<span class="tn">${esc(j.away.name)}</span></button>
       </div>
       ${j.odds_1x2 ? `<div class="statgrid" style="margin-top:16px"><div class="stat"><div class="l">${j.locked ? "Odd justa · " : ""}Casa</div><div class="v">${odd(j.odds_1x2["1"])}</div></div><div class="stat dark"><div class="l">Empate</div><div class="v">${odd(j.odds_1x2.X)}</div></div><div class="stat"><div class="l">Fora</div><div class="v">${odd(j.odds_1x2["2"])}</div></div></div>` : ""}

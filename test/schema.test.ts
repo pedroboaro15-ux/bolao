@@ -34,8 +34,8 @@ const check = (w: Write) => {
 };
 
 describe("schema.sql cobre tudo que o app grava", () => {
-  it("o arquivo tem as 10 tabelas esperadas", () => {
-    expect([...tables.keys()].sort()).toEqual(["api_usage", "fixtures_cache", "matches", "predictions", "push_subs", "rounds", "settings", "standings", "team_cache", "users"]);
+  it("o arquivo tem as 13 tabelas esperadas", () => {
+    expect([...tables.keys()].sort()).toEqual(["answers", "api_usage", "fixtures_cache", "matches", "predictions", "push_subs", "questions", "rate_limits", "rounds", "settings", "standings", "team_cache", "users"]);
     expect(tables.get("predictions")).toContain("pick_1x2");
   });
 
@@ -63,6 +63,10 @@ describe("schema.sql cobre tudo que o app grava", () => {
     await call("/api/admin/rodadas/" + rid, "admin", "PATCH", { status: "closed" });
     // cadastro aberto (com telefone) + papel + remoção
     await app.request("http://localhost/api/cadastro", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "novo@x.com", phone: "(11) 91234-5678", password: "senha1234", confirm: "senha1234", nickname: "Novato" }) }, env, ctx);
+    // perguntas do dia: criar, responder, resultado (grava answers e o ranking do dia)
+    const q = await json(await call("/api/admin/perguntas", "admin", "POST", { date: "2026-10-04", kind: "ufc", title: "Luta principal", closes_at: new Date(Date.now() + 3600_000).toISOString(), options: [{ label: "A", odd: 1.6 }, { label: "B", odd: 2.4 }] }));
+    await call(`/api/perguntas/${q.id}/resposta`, "lucas", "PUT", { option_id: "o2" });
+    await call(`/api/admin/perguntas/${q.id}/resultado`, "admin", "POST", { option_id: "o2" });
     // configuração (congela os extras dos jogos iniciados) e push
     await call("/api/admin/config", "admin", "PUT", { goalsEnabled: false, oddCap: 120 });
     await call("/api/push/inscrever", "lucas", "POST", { endpoint: "https://push.example/abc", keys: { p256dh: "k", auth: "a" } });
@@ -80,7 +84,7 @@ describe("schema.sql cobre tudo que o app grava", () => {
   });
 
   it("o teste realmente exercitou as tabelas principais", () => {
-    for (const t of ["users", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
+    for (const t of ["questions", "answers", "users", "rounds", "matches", "predictions", "standings", "settings", "push_subs", "api_usage"]) {
       expect(seenColls.has(t), t).toBe(true);
     }
   });

@@ -5,6 +5,7 @@ import { ApiFootball, CALLED_OFF, FINISHED, QuotaError } from "./apifootball";
 import { closeStartedRounds, freezeStarted, loadFixtures, refreshOddsBatch } from "./rounds";
 import { isSettled, recalcRound } from "./results";
 import { pushConfigured, sendPush } from "./push";
+import { purgeRateLimits } from "../lib/ratelimit";
 
 const MATCH_DURATION_MIN = 105; // 90' + acréscimos + intervalo: só depois disso vale perguntar o placar
 const GIVE_UP_HOURS = 36;
@@ -44,7 +45,8 @@ export async function runHourly(env: Env, repo: Repo) {
   const openIds = new Set(rounds.filter((r) => r.status === "open").map((r) => r.id));
   const upcoming = all.filter((m) => openIds.has(m.round_id));
   const odds = await refreshOddsBatch(repo, api, settings, upcoming, ODDS_PER_RUN, now);
-  console.log(`hourly: congelados=${frozen} odds=${JSON.stringify(odds)}`);
+  const limpas = await purgeRateLimits(repo.db, now).catch((e) => (console.error("limpeza dos limites falhou:", e?.message), 0));
+  console.log(`hourly: congelados=${frozen} odds=${JSON.stringify(odds)} limites_limpos=${limpas}`);
 }
 
 /** *\/15 * * * *  — placares, pontos, ranking, fechamento e lembretes. */

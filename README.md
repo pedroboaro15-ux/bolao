@@ -97,6 +97,10 @@ e por isso a pasta `node_modules` tem menos de 700 arquivos.
 - **Supabase (Free):** 500 MB de banco e 50 mil usuários ativos por mês; muito acima do que um bolão usa. Projetos parados por 7 dias são pausados, mas o site fala com o banco a cada 15 minutos, então não pausa.
   E-mails de recuperação de senha usam o envio embutido do Supabase, que tem limite baixo por hora: serve para um grupo de amigos.
 
+## Limites de segurança
+- **Cadastro:** no máximo 2 por minuto no site todo. **Login:** 5 tentativas erradas por conta a cada 15 minutos (depois, bloqueado até a janela virar). Os limites ficam no banco (tabela `rate_limits`, criada pelo `schema.sql`).
+- Para mudar os números, acrescente em `[vars]` do `wrangler.toml`: `LIMIT_SIGNUP_PER_MIN = "2"` e `LIMIT_LOGIN_FAILS = "5"`.
+
 ## Notificações no iPhone (opcional)
 Só funcionam com o site **adicionado à Tela de Início** (iOS 16.4+): Safari → Compartilhar → Adicionar à Tela de Início → abrir pelo ícone → tocar no sino.
 Para ligar: `npx web-push generate-vapid-keys`, ponha a chave pública em `VAPID_PUBLIC_KEY` no `wrangler.toml`, guarde a privada com

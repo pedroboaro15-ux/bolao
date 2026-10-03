@@ -118,6 +118,13 @@ export function leagueIcon(l) {
   return `<span class="league-icon" aria-hidden="true">${img}</span>`;
 }
 
+/** Texto do selo "ao vivo": 2º tempo 63', Intervalo, Pênaltis... */
+export function liveLabel(live) {
+  const el = live?.elapsed != null ? ` ${live.elapsed}'` : "";
+  const t = { "1H": "1º tempo", "2H": "2º tempo", HT: "Intervalo", ET: "Prorrogação", BT: "Intervalo", P: "Pênaltis", FT: "Fim de jogo", AET: "Fim de jogo", PEN: "Fim de jogo", SUSP: "Suspenso", INT: "Interrompido", LIVE: "Ao vivo" }[live?.status] ?? "Ao vivo";
+  return ["1H", "2H", "ET"].includes(live?.status) ? `${t}${el}` : t;
+}
+
 export const avatar = (name, cls = "") => `<span class="avatar ${cls}" aria-hidden="true">${esc(initials(name).slice(0, 1) || "?")}</span>`;
 
 const I = {
