@@ -1,23 +1,37 @@
 /**
- * Disputa de pênaltis "de mentira" do mata-mata, usada só quando o confronto empata nos gols E no lucro.
- * Cada cobrança sorteia o canto do chute e o pulo do goleiro (coluna esquerda/meio/direita × altura em cima/meio/embaixo):
+ * Disputa de pênaltis do mata-mata, usada só quando o confronto empata nos gols E no lucro.
+ * Em cada cobrança o canto do chute e o pulo do goleiro (coluna esquerda/meio/direita × altura em cima/meio/embaixo):
  * - 8% de qualquer chute vai para fora;
  * - goleiro acertou o canto e a altura: 90% de defesa;
  * - goleiro acertou o canto mas não a altura: 25% de defesa;
  * - goleiro foi para o outro lado: gol.
  * 5 cobranças para cada um (para antes se não der mais para alcançar), depois alternadas até alguém errar.
- * O sorteio usa uma semente fixa (o confronto), então o resultado é sempre o mesmo a cada vez que a tela abre.
+ * Cada jogador escolhe antes do prazo onde chuta e para onde pula em cada cobrança (5 + 5 alternadas); o que faltar,
+ * a máquina sorteia (aleatório de verdade, `crypto`). O resultado é gravado uma vez só (tabela `shootouts`).
  */
 
 export type Col = "esq" | "meio" | "dir";
 export type Row = "cima" | "meio" | "baixo";
+export interface Spot {
+  col: Col;
+  row: Row;
+}
 export interface Kick {
   /** Quem bate: "a" ou "b". */
   by: "a" | "b";
-  aim: { col: Col; row: Row };
-  dive: { col: Col; row: Row };
+  aim: Spot;
+  dive: Spot;
   result: "gol" | "defesa" | "fora";
+  /** Escolhas feitas pela máquina (quem não palpitou). */
+  auto?: { aim: boolean; dive: boolean };
 }
+/** Palpite de um jogador: onde chuta e para onde pula, cobrança a cobrança (null = a máquina escolhe). */
+export interface ShootPicks {
+  aims: (Spot | null)[];
+  dives: (Spot | null)[];
+}
+/** Quantas cobranças cada um palpita: 5 + 5 alternadas (depois disso, a máquina). */
+export const PICKS = 10;
 export interface Shootout {
   kicks: Kick[];
   a: number;
@@ -46,22 +60,45 @@ export function rng(seed: string): () => number {
   };
 }
 
-export function kick(by: "a" | "b", rand: () => number): Kick {
-  const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
-  const aim = { col: pick(COLS), row: pick(ROWS) };
-  const dive = { col: pick(COLS), row: pick(ROWS) };
+/** Aleatório de verdade (sem semente e sem padrão), para a máquina e para o chute. */
+export const secureRandom = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+
+const randomSpot = (rand: () => number): Spot => ({ col: COLS[Math.floor(rand() * 3)], row: ROWS[Math.floor(rand() * 3)] });
+
+export function kickWith(by: "a" | "b", rand: () => number, chosenAim?: Spot | null, chosenDive?: Spot | null): Kick {
+  const aim = chosenAim ?? randomSpot(rand);
+  const dive = chosenDive ?? randomSpot(rand);
   let result: Kick["result"] = "gol";
   if (rand() < OFF_TARGET) result = "fora";
   else if (dive.col === aim.col) {
     const p = dive.row === aim.row ? SAVE_EXACT : SAVE_SIDE;
     if (rand() < p) result = "defesa";
   }
-  return { by, aim, dive, result };
+  return { by, aim, dive, result, auto: { aim: !chosenAim, dive: !chosenDive } };
 }
 
+const isSpot = (x: any): x is Spot => !!x && COLS.includes(x.col) && ROWS.includes(x.row);
+
+/** Confere o palpite vindo da tela: até PICKS chutes e PICKS pulos, cada um válido ou vazio. */
+export function parsePicks(body: any): ShootPicks {
+  const norm = (xs: any) => Array.from({ length: PICKS }, (_, i) => (Array.isArray(xs) && isSpot(xs[i]) ? { col: xs[i].col, row: xs[i].row } : null));
+  return { aims: norm(body?.aims), dives: norm(body?.dives) };
+}
+
+/** Exemplo sorteado (tela "Ver exemplo" e testes): semente fixa = sempre o mesmo. */
 export function shootout(seed: string): Shootout {
-  const rand = rng(seed);
+  return resolveShootout({}, rng(seed));
+}
+
+/** Disputa com os palpites dos dois; o que faltar, a máquina escolhe. */
+export function resolveShootout(picks: { a?: ShootPicks | null; b?: ShootPicks | null }, rand: () => number = secureRandom): Shootout {
   const kicks: Kick[] = [];
+  const n = { a: 0, b: 0 };
+  const kick = (by: "a" | "b", r: () => number) => {
+    const i = n[by]++;
+    const other = by === "a" ? "b" : "a";
+    return kickWith(by, r, picks[by]?.aims[i], picks[other]?.dives[i]);
+  };
   let a = 0, b = 0;
   // série de 5
   for (let i = 0; i < 5; i++) {
@@ -75,7 +112,7 @@ export function shootout(seed: string): Shootout {
     }
   }
   // alternadas
-  for (let n = 0; n < 200; n++) {
+  for (let t = 0; t < 200; t++) {
     const ka = kick("a", rand);
     const kb = kick("b", rand);
     kicks.push(ka, kb);

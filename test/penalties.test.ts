@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kick, rng, shootout } from "../src/lib/penalties";
+import { kickWith as kick, rng, shootout } from "../src/lib/penalties";
 import { buildTournament, type Matchday, type TournamentConfig } from "../src/lib/tournament";
 
 describe("pênaltis sorteados", () => {
@@ -64,13 +64,16 @@ describe("mata-mata: desempate", () => {
     expect(t.pens).toEqual({ by: "lucro" });
   });
 
-  it("lucro igual: disputa de pênaltis sorteada, sempre a mesma", () => {
+  it("lucro igual: pênaltis pendentes até o resultado; com o resultado, passa quem venceu", () => {
     const days = [day("2026-10-01", 1.5, 1.5), day("2026-10-02", 0.7, 0.7)];
     const t = buildTournament(cfg, days).knockout[0].ties[0];
-    expect(t.pens?.by).toBe("cobranças");
-    expect(t.decidedBy).toBe("pênaltis");
-    expect(buildTournament(cfg, days).knockout[0].ties[0]).toEqual(t);
-    const p = t.pens as any;
+    expect(t.pens).toEqual({ by: "cobranças", key: "Final|a|b", pending: true });
+    expect(t.winner).toBeNull();
+    const so = shootout("x");
+    const t2 = buildTournament(cfg, days, new Map([["Final|a|b", so]])).knockout[0].ties[0];
+    expect(t2.winner).toBe(so.winner);
+    const p = t2.pens as any;
     console.log(`exemplo: a ${p.a} x ${p.b} b | ` + p.kicks.map((k: any) => `${k.by}:${k.aim.col}/${k.aim.row}→${k.result}`).join(" "));
   });
+
 });

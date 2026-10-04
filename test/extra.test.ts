@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import type { Env } from "../src/types";
-import { parseChampionship } from "../src/routes/extra";
+import { parseChampionship, shootoutId, syncShootouts } from "../src/routes/extra";
+import { getDemo } from "../src/dev";
 
 const app = createApp();
 const env = { DEV_MEMORY: "1" } as unknown as Env;
@@ -176,3 +177,38 @@ describe("competição paga (opcional)", () => {
   });
 });
 
+
+describe("pênaltis com palpite", () => {
+  it("sobe ao empatar; só os dois palpitam até o prazo; depois a máquina completa e o resultado fica gravado", async () => {
+    const { repo } = await getDemo();
+    const key = "Final|lucas|ana";
+    const ties = [{ a: "lucas", b: "ana", pens: { by: "cobranças", key, pending: true } }];
+    await syncShootouts(repo, "chT", ties);
+    const sid = shootoutId("chT", key);
+    expect((await repo.db.get<any>(`shootouts/${sid}`))?.data.result).toBeNull();
+
+    const aims = Array(10).fill({ col: "esq", row: "cima" });
+    const url = `/api/campeonatos/chT/penaltis/${sid}`;
+    expect((await call(url, { method: "PUT", user: "carlos", body: { aims } })).status).toBe(403);
+    expect((await call(url, { method: "PUT", user: "lucas", body: { aims, dives: [{ col: "x", row: "y" }] } })).status).toBe(200);
+    const saved = (await repo.db.get<any>(`shootouts/${sid}`))!.data.picks.lucas;
+    expect(saved.aims[0]).toEqual({ col: "esq", row: "cima" });
+    expect(saved.dives[0]).toBeNull(); // inválido vira "a máquina escolhe"
+
+    // sem prazo: não resolve
+    expect((await syncShootouts(repo, "chT", ties)).resolved).toBe(false);
+    expect((await call(`/api/admin/campeonatos/chT/penaltis/${sid}/prazo`, { method: "PUT", user: "lucas", body: { deadline: "2020-01-01T00:00:00Z" } })).status).toBe(403);
+    expect((await call(`/api/admin/campeonatos/chT/penaltis/${sid}/prazo`, { method: "PUT", user: "admin", body: { deadline: "2020-01-01T00:00:00Z" } })).status).toBe(200);
+    const { byKey, resolved } = await syncShootouts(repo, "chT", ties);
+    expect(resolved).toBe(true);
+    const res = byKey.get(key)!.data.result!;
+    const lucasKicks = res.kicks.filter((k) => k.by === "a");
+    expect(lucasKicks.every((k) => k.aim.col === "esq" && k.aim.row === "cima" && k.auto?.aim === false)).toBe(true);
+    expect(res.kicks.filter((k) => k.by === "b").every((k) => k.auto?.aim === true)).toBe(true); // Ana não palpitou
+    expect(res.a).not.toBe(res.b);
+    // gravado: não sorteia de novo, e não aceita mais palpite
+    const again = await syncShootouts(repo, "chT", ties);
+    expect(again.byKey.get(key)!.data.result).toEqual(res);
+    expect((await call(url, { method: "PUT", user: "ana", body: { aims } })).status).toBe(400);
+  });
+});

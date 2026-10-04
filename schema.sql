@@ -163,7 +163,7 @@ begin
     op   := x->>'op';
 
     if coll not in ('users', 'rounds', 'matches', 'predictions', 'standings', 'api_usage', 'push_subs',
-                    'settings', 'fixtures_cache', 'team_cache', 'rate_limits', 'questions', 'answers', 'suggestions', 'comments', 'reactions', 'championships') then
+                    'settings', 'fixtures_cache', 'team_cache', 'rate_limits', 'questions', 'answers', 'suggestions', 'comments', 'reactions', 'championships', 'shootouts') then
       raise exception 'coleção inválida: %', coll;
     end if;
     if did is null or did = '' then
@@ -325,6 +325,22 @@ alter table championships add column if not exists advance integer;       -- qua
 alter table championships add column if not exists goal_step double precision; -- quantos pontos de lucro valem 1 gol
 alter table championships add column if not exists participants jsonb;    -- ids na ordem de entrada (cabeça de chave)
 
+-- Pênaltis do mata-mata (empate em gols e em lucro): palpites de cada um até o prazo do admin e o resultado, gravado uma vez.
+create table if not exists shootouts (
+  id               text primary key,             -- {campeonato}~{fase}~{a}~{b}
+  championship_id  text not null,
+  key              text not null,                -- fase|a|b
+  a                text not null,
+  b                text not null,
+  deadline         timestamptz,                  -- prazo para palpitar (vazio = o admin ainda não definiu)
+  picks            jsonb,                        -- { userId: { aims: [...], dives: [...] } }
+  result           jsonb,                        -- disputa pronta (cobranças, placar, vencedor)
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz,
+  version          bigint not null default 1
+);
+create index if not exists shootouts_champ_idx on shootouts (championship_id);
+
 -- Vagas dos limites (cadastro: 2 por minuto; login: 5 tentativas por conta). O cron apaga as antigas.
 create table if not exists rate_limits (
   id          text primary key,
@@ -353,6 +369,7 @@ alter table suggestions    enable row level security;
 alter table comments       enable row level security;
 alter table reactions      enable row level security;
 alter table championships  enable row level security;
+alter table shootouts      enable row level security;
 
 revoke all on users, rounds, matches, predictions, standings, api_usage, push_subs, settings, fixtures_cache, team_cache, rate_limits, questions, answers, suggestions, comments, reactions, championships
   from anon, authenticated;

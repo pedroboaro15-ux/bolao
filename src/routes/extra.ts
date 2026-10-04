@@ -11,6 +11,8 @@ import { round2 } from "../lib/odds";
 import { ApiFootball, FINISHED } from "../services/apifootball";
 import { recalcRound } from "../services/results";
 import { rebuildTotals, sortRows } from "../services/standings";
+import { parsePicks, resolveShootout, type Shootout, type ShootPicks } from "../lib/penalties";
+import { ConflictError } from "../db/types";
 import { FORMATS, buildTournament, matchdaysNeeded, type Matchday, type TournamentConfig, type TournamentFormat } from "../lib/tournament";
 
 /**
@@ -28,6 +30,60 @@ const rand = () => `${Date.now().toString(36)}${crypto.getRandomValues(new Uint3
 const list = async <T>(repo: Repo, coll: string, where: [string, "==", any][] = []) => (await repo.db.query<T>(coll, { where })).map((d) => ({ id: d.id, ...d.data }));
 
 // ---------- campeonatos ----------
+
+/** Pênaltis de um confronto do mata-mata (tabela `shootouts`). */
+interface ShootDoc {
+  championship_id: string;
+  key: string;
+  a: string;
+  b: string;
+  deadline: Date | string | null;
+  picks: Record<string, ShootPicks> | null;
+  result: Shootout | null;
+}
+/** Id da disputa: campeonato + hash curto da chave (fase|a|b), sem caracteres estranhos na URL. */
+export const shootoutId = (champId: string, key: string) => {
+  let h = 2166136261;
+  for (const ch of key) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return `${champId}~${(h >>> 0).toString(36)}`;
+};
+
+/**
+ * Pênaltis pendentes: cria a disputa assim que o confronto empata (gols e lucro) e, passado o prazo do admin,
+ * sorteia o que faltar e grava o resultado uma vez só. Devolve as disputas (por chave) e se algo foi resolvido agora.
+ */
+export async function syncShootouts(repo: Repo, champId: string, ties: { a: string | null; b: string | null; pens?: any }[]) {
+  const docs = await repo.db.query<ShootDoc>("shootouts", { where: [["championship_id", "==", champId]] });
+  const byKey = new Map(docs.map((d) => [d.data.key, d]));
+  const now = new Date();
+  let resolved = false;
+  for (const ti of ties) {
+    if (ti.pens?.by !== "cobranças" || !ti.pens.pending || !ti.a || !ti.b) continue;
+    const key: string = ti.pens.key;
+    const id = shootoutId(champId, key);
+    const doc = byKey.get(key);
+    if (!doc) {
+      const data: ShootDoc = { championship_id: champId, key, a: ti.a, b: ti.b, deadline: null, picks: {}, result: null };
+      await repo.db.commit([{ op: "set", path: `shootouts/${id}`, data: { ...data, created_at: now }, mustNotExist: true }]).catch((e) => {
+        if (!(e instanceof ConflictError)) throw e;
+      });
+      byKey.set(key, { id, data, updateTime: "1" });
+      continue;
+    }
+    if (doc.data.result || !doc.data.deadline || now < new Date(doc.data.deadline)) continue;
+    const result = resolveShootout({ a: doc.data.picks?.[ti.a], b: doc.data.picks?.[ti.b] });
+    try {
+      await repo.db.commit([{ op: "merge", path: `shootouts/${id}`, data: { result, updated_at: now }, updateTime: doc.updateTime }]);
+      doc.data.result = result;
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+      const fresh = await repo.db.get<ShootDoc>(`shootouts/${id}`); // outra pessoa resolveu ao mesmo tempo
+      if (fresh) byKey.set(key, fresh);
+    }
+    resolved = true;
+  }
+  return { byKey, resolved };
+}
 
 export interface Championship {
   name: string;
@@ -276,7 +332,24 @@ export function extraPlayerRoutes() {
     const campeonato = { id: doc.id, ...doc.data, formato: doc.data.format ? FORMATS[doc.data.format] : null };
     const cfg = tournamentConfig(doc.data);
     if (cfg) {
-      const t = buildTournament(cfg, await championshipDays(repo, doc.data));
+      const days = await championshipDays(repo, doc.data);
+      let t = buildTournament(cfg, days);
+      const ties = t.knockout.flatMap((k) => k.ties);
+      const { byKey } = await syncShootouts(repo, doc.id, ties);
+      const results = new Map([...byKey].filter(([, d]) => d.data.result).map(([k, d]) => [k, d.data.result!]));
+      if (results.size) t = buildTournament(cfg, days, results);
+      const me = c.get("user");
+      const pensInfo = (ti: any) => {
+        if (ti.pens?.by !== "cobranças") return {};
+        const d = byKey.get(ti.pens.key)?.data;
+        const picks = d?.picks ?? {};
+        return {
+          sid: shootoutId(doc.id, ti.pens.key),
+          deadline: d?.deadline ?? null,
+          palpitou: { a: !!picks[ti.a], b: !!picks[ti.b] },
+          meu: ti.pens.pending && (me.id === ti.a || me.id === ti.b) ? (picks[me.id] ?? null) : undefined,
+        };
+      };
       const nome = (id: string | null) => (id ? (nick.get(id) ?? "?") : null);
       return c.json({
         campeonato,
@@ -284,13 +357,26 @@ export function extraPlayerRoutes() {
         rodadas_necessarias: matchdaysNeeded(cfg),
         grupos: t.groups.map((g) => ({ ...g, table: g.table.map((r) => ({ ...r, nickname: nome(r.user_id) })) })),
         rodadas: t.rounds.map((r) => ({ ...r, fixtures: r.fixtures.map((f) => ({ ...f, home_nick: nome(f.home), away_nick: nome(f.away) })) })),
-        mata: t.knockout.map((k) => ({ ...k, ties: k.ties.map((ti) => ({ ...ti, a_nick: nome(ti.a), b_nick: nome(ti.b), winner_nick: nome(ti.winner) })) })),
+        mata: t.knockout.map((k) => ({ ...k, ties: k.ties.map((ti) => ({ ...ti, ...pensInfo(ti), a_nick: nome(ti.a), b_nick: nome(ti.b), winner_nick: nome(ti.winner) })) })),
         campeao: nome(t.champion),
         rows: [],
       });
     }
     const rows = (await championshipRows(repo, doc.data)).filter((x) => nick.has(x.user_id)).map((x) => ({ ...x, nickname: nick.get(x.user_id)! }));
     return c.json({ campeonato, confrontos: false, rows });
+  });
+
+  // Palpite dos pênaltis: só os dois do confronto, até o prazo (hora do servidor).
+  r.put("/campeonatos/:id/penaltis/:sid", async (c) => {
+    const { repo } = c.get("ctx");
+    const user = c.get("user");
+    const doc = await repo.db.get<ShootDoc>(`shootouts/${c.req.param("sid")}`);
+    if (!doc || doc.data.championship_id !== c.req.param("id")) throw notFound("Disputa de pênaltis não encontrada");
+    if (user.id !== doc.data.a && user.id !== doc.data.b) throw forbidden("Só quem está no confronto bate os pênaltis");
+    if (doc.data.result || (doc.data.deadline && new Date() >= new Date(doc.data.deadline))) throw badRequest("O prazo dos pênaltis acabou");
+    const picks = { ...(doc.data.picks ?? {}), [user.id]: parsePicks(await c.req.json().catch(() => ({}))) };
+    await repo.db.commit([{ op: "merge", path: `shootouts/${doc.id}`, data: { picks, updated_at: new Date() }, updateTime: doc.updateTime }]);
+    return c.json({ ok: true });
   });
 
   return r;
@@ -389,6 +475,18 @@ export function extraAdminRoutes() {
     const id = c.req.param("id");
     if (!(await repo.db.get(`championships/${id}`))) throw notFound("Campeonato não encontrado");
     await repo.db.commit([{ op: "merge", path: `championships/${id}`, data: parseChampionship(await c.req.json().catch(() => ({}))) }]);
+    return c.json({ ok: true });
+  });
+  // Prazo dos pênaltis (o admin anuncia no WhatsApp e define aqui). Vazio = sem prazo ainda.
+  r.put("/campeonatos/:id/penaltis/:sid/prazo", async (c) => {
+    const { repo } = c.get("ctx");
+    const doc = await repo.db.get<ShootDoc>(`shootouts/${c.req.param("sid")}`);
+    if (!doc || doc.data.championship_id !== c.req.param("id")) throw notFound("Disputa de pênaltis não encontrada");
+    if (doc.data.result) throw badRequest("Esses pênaltis já foram batidos");
+    const raw = (await c.req.json().catch(() => ({})))?.deadline;
+    const deadline = raw ? new Date(raw) : null;
+    if (deadline && Number.isNaN(deadline.getTime())) throw badRequest("Data inválida");
+    await repo.db.commit([{ op: "merge", path: `shootouts/${doc.id}`, data: { deadline, updated_at: new Date() } }]);
     return c.json({ ok: true });
   });
   r.delete("/campeonatos/:id", async (c) => {

@@ -35,7 +35,7 @@ const check = (w: Write) => {
 
 describe("schema.sql cobre tudo que o app grava", () => {
   it("o arquivo tem as 17 tabelas esperadas", () => {
-    expect([...tables.keys()].sort()).toEqual(["answers", "api_usage", "championships", "comments", "fixtures_cache", "matches", "predictions", "push_subs", "questions", "rate_limits", "reactions", "rounds", "settings", "standings", "suggestions", "team_cache", "users"]);
+    expect([...tables.keys()].sort()).toEqual(["answers", "api_usage", "championships", "comments", "fixtures_cache", "matches", "predictions", "push_subs", "questions", "rate_limits", "reactions", "rounds", "settings", "shootouts", "standings", "suggestions", "team_cache", "users"]);
     expect(tables.get("predictions")).toContain("pick_1x2");
   });
 

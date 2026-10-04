@@ -1,4 +1,4 @@
-import { esc, openSheet } from "./util.js";
+import { api, esc, openSheet, toast } from "./util.js";
 
 /**
  * Disputa de pênaltis animada (só visual; o resultado já vem pronto do servidor).
@@ -124,7 +124,7 @@ export function openShootout(t) {
       <img class="pk-ball" src="/icons/soccerball.svg" alt="">
       <div class="pk-msg" aria-live="polite"></div>
     </div>
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Gols e lucro empatados: a vaga saiu numa disputa sorteada. Chute para fora: 8%. Goleiro no canto e na altura certos: defende 90%; só no canto: 25%.</p>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Chute para fora: 8%. Goleiro no canto e na altura certos: defende 90%; só no canto: 25%.</p>
     <div class="actions"><button class="btn" data-skip>Pular</button><button class="btn" data-again>Ver de novo</button><button class="btn primary" data-close>Fechar</button></div>`);
   const el = s.el;
   const stage = el.querySelector(".pk-stage");
@@ -264,3 +264,104 @@ export function openShootout(t) {
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------- palpite dos pênaltis ----------
+
+const COLS = ["esq", "meio", "dir"];
+const ROWS = ["cima", "meio", "baixo"];
+const PICKS = 10;
+const ordinal = (i) => (i < 5 ? `${i + 1}ª cobrança` : `${i + 1}ª · alternada`);
+
+/** Escolha de chute e pulo, cobrança a cobrança. O que ficar vazio, a máquina sorteia no fim do prazo. */
+export function openPicker(t, campId, onSaved) {
+  const mine = t.meu ?? { aims: [], dives: [] };
+  const pick = { aims: Array.from({ length: PICKS }, (_, i) => mine.aims?.[i] ?? null), dives: Array.from({ length: PICKS }, (_, i) => mine.dives?.[i] ?? null) };
+  const grid = (kind, i) => `<div class="pk-pick" role="group" aria-label="${kind === "aims" ? "Chute" : "Pulo"} da ${ordinal(i)}">${ROWS.map((r) => COLS.map((c) => `<button type="button" data-k="${kind}" data-i="${i}" data-c="${c}" data-r="${r}" aria-label="${r} ${c}"></button>`).join("")).join("")}</div>`;
+  const s = openSheet(`
+    <h2 class="section-title" style="margin-top:0">Seus pênaltis</h2>
+    <p class="muted" style="font-size:13px;margin-top:0">${t.deadline ? `Até ${esc(new Date(t.deadline).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }))}.` : "O prazo será definido pelo admin."} Toque onde você chuta e para onde pula em cada cobrança. O que ficar em branco, a máquina sorteia.</p>
+    <div class="pk-pick-head"><span></span><b>Você chuta</b><b>Você pula</b></div>
+    ${Array.from({ length: PICKS }, (_, i) => `<div class="pk-pick-row"><span>${ordinal(i)}</span>${grid("aims", i)}${grid("dives", i)}</div>`).join("")}
+    <div class="actions"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Salvar pênaltis</button></div>`);
+  const paint = () =>
+    s.el.querySelectorAll(".pk-pick button").forEach((b) => {
+      const v = pick[b.dataset.k][b.dataset.i];
+      b.setAttribute("aria-pressed", String(!!v && v.col === b.dataset.c && v.row === b.dataset.r));
+    });
+  paint();
+  s.el.addEventListener("click", async (e) => {
+    const b = e.target.closest(".pk-pick button");
+    if (b) {
+      const cur = pick[b.dataset.k][b.dataset.i];
+      pick[b.dataset.k][b.dataset.i] = cur && cur.col === b.dataset.c && cur.row === b.dataset.r ? null : { col: b.dataset.c, row: b.dataset.r };
+      return paint();
+    }
+    const save = e.target.closest("[data-save]");
+    if (!save) return;
+    save.disabled = true;
+    try {
+      await api(`/campeonatos/${encodeURIComponent(campId)}/penaltis/${encodeURIComponent(t.sid)}`, { method: "PUT", body: pick });
+      toast("Pênaltis salvos");
+      s.close();
+      onSaved?.();
+    } catch (err) {
+      toast(err.message, "err");
+      save.disabled = false;
+    }
+  });
+}
+
+/** Admin: prazo para palpitar (anunciado no WhatsApp). */
+export function openDeadline(t, campId, onSaved) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const d = t.deadline ? new Date(t.deadline) : null;
+  const val = d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}` : "";
+  const s = openSheet(`
+    <h2 class="section-title" style="margin-top:0">Prazo dos pênaltis</h2>
+    <p class="muted" style="font-size:13px;margin-top:0">${esc(t.a_nick)} x ${esc(t.b_nick)}. Até essa hora os dois escolhem os chutes e pulos; depois a máquina completa o que faltar e a disputa sai.</p>
+    <label class="f">Palpites até<input type="datetime-local" name="prazo" value="${val}"></label>
+    <div class="actions"><button class="btn" data-close>Cancelar</button><button class="btn" data-clear>Sem prazo</button><button class="btn primary" data-save>Salvar</button></div>`);
+  s.el.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-save],[data-clear]");
+    if (!b) return;
+    const v = s.el.querySelector("[name=prazo]").value;
+    if (b.hasAttribute("data-save") && !v) return toast("Escolha a data e a hora", "err");
+    try {
+      await api(`/admin/campeonatos/${encodeURIComponent(campId)}/penaltis/${encodeURIComponent(t.sid)}/prazo`, { method: "PUT", body: { deadline: b.hasAttribute("data-save") ? new Date(v).toISOString() : null } });
+      toast("Prazo salvo");
+      s.close();
+      onSaved?.();
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+}
+
+/** Exemplo com as mesmas regras (sorteado aqui no aparelho), para ver a animação. */
+export function openExample() {
+  const r = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+  const spot = () => ({ col: COLS[Math.floor(r() * 3)], row: ROWS[Math.floor(r() * 3)] });
+  const kick = (by) => {
+    const aim = spot(), dive = spot();
+    let result = "gol";
+    if (r() < 0.08) result = "fora";
+    else if (dive.col === aim.col && r() < (dive.row === aim.row ? 0.9 : 0.25)) result = "defesa";
+    return { by, aim, dive, result };
+  };
+  const kicks = [];
+  let a = 0, b = 0, done = false;
+  for (let i = 0; i < 5 && !done; i++)
+    for (const by of ["a", "b"]) {
+      const k = kick(by);
+      kicks.push(k);
+      if (k.result === "gol") by === "a" ? a++ : b++;
+      if (a > b + 5 - (by === "b" ? i + 1 : i) || b > a + 4 - i) { done = true; break; }
+    }
+  while (!done && a === b) {
+    const ka = kick("a"), kb = kick("b");
+    kicks.push(ka, kb);
+    a += ka.result === "gol";
+    b += kb.result === "gol";
+  }
+  openShootout({ a_nick: "Mandante", b_nick: "Visitante", winner_nick: a > b ? "Mandante" : "Visitante", pens: { by: "cobranças", a, b, kicks } });
+}

@@ -2,7 +2,7 @@
 import { toast } from "./util.js";
 import { api, avatar, crest, esc, fmtDate, fmtMonth, fmtWhen, icon, leagueIcon, liveLabel, odd, pts, signed, zebraBlock, zebraLabel } from "./util.js";
 import { state } from "./store.js";
-import { openShootout } from "./penalties.js";
+import { openDeadline, openExample, openPicker, openShootout } from "./penalties.js";
 
 const fail = (view, e) => (view.innerHTML = `<div class="page narrow"><div class="card card-pad"><p class="error">${esc(e.message)}</p></div></div>`);
 
@@ -57,6 +57,14 @@ export function renderRanking(view) {
       }</div>`}</div>`;
   }
 
+  /** Pênaltis abertos: prazo, quem já palpitou e os botões (bater / prazo do admin). */
+  function pendente(m, t, i) {
+    const ref = `${esc(m.stage)}|${i}`;
+    const ok = (v) => (v ? '<span style="color:var(--hit)">já palpitou</span>' : '<span class="muted">ainda não</span>');
+    return `<div class="pk-status"><b>Pênaltis</b> · ${t.deadline ? `palpites até ${fmtWhen(t.deadline)}` : "prazo a definir"}<br>${esc(t.a_nick)}: ${ok(t.palpitou?.a)} · ${esc(t.b_nick)}: ${ok(t.palpitou?.b)}
+      <div class="actions" style="margin-top:6px">${t.meu !== undefined ? `<button class="btn small primary" data-pkpick="${ref}">${t.meu ? "Mudar meus pênaltis" : "Bater os pênaltis"}</button>` : ""}${state.user.role === "admin" ? `<button class="btn small" data-pkprazo="${ref}">Prazo</button>` : ""}</div></div>`;
+  }
+
   /** Campeonato de confrontos: classificação (reduzida/completa), rodadas e mata-mata. */
   function confrontosBody(d, me) {
     const c = d.campeonato;
@@ -69,10 +77,10 @@ export function renderRanking(view) {
     return `
       ${d.campeao ? `<div class="card card-pad" style="margin-bottom:12px;text-align:center"><div class="muted" style="font-size:12px;font-weight:600">CAMPEÃO</div><div style="font-family:var(--font-display);font-size:32px;font-weight:700">${esc(d.campeao)}</div></div>` : ""}
       ${d.grupos.length ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><h2 class="section-title" style="margin:0">Classificação</h2><div class="seg" role="group" aria-label="Tipo de tabela"><button data-tab="red" aria-pressed="${!S.completa}">Reduzida</button><button data-tab="comp" aria-pressed="${S.completa}">Completa</button></div></div>${d.grupos.map(tabela).join("")}` : ""}
-      ${d.mata.length ? `<h2 class="section-title">Mata-mata</h2>${d.mata.map((m) => `<div class="card" style="margin-bottom:12px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${esc(m.stage)}</b></div>${m.ties.map((t, i) => `<div class="list-row" style="flex-wrap:wrap"><div class="grow">${nome(t.a_nick)} <span class="muted">x</span> ${nome(t.b_nick)}</div><span class="num">${t.ga == null ? "" : `${t.ga} x ${t.gb}`}</span>${t.winner_nick ? `<span class="tag ok">passa ${esc(t.winner_nick)}${t.pens?.by === "lucro" ? ` (lucro ${pts(t.la)} x ${pts(t.lb)})` : t.decidedBy === "folga" ? " (folga)" : ""}</span>` : ""}${t.pens?.by === "cobranças" ? `<button class="btn small" data-pk="${esc(m.stage)}|${i}">Pênaltis ${t.pens.a} x ${t.pens.b}</button>` : ""}</div>`).join("")}</div>`).join("")}` : ""}
+      ${d.mata.length ? `<h2 class="section-title">Mata-mata</h2>${d.mata.map((m) => `<div class="card" style="margin-bottom:12px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${esc(m.stage)}</b></div>${m.ties.map((t, i) => `<div class="list-row" style="flex-wrap:wrap"><div class="grow">${nome(t.a_nick)} <span class="muted">x</span> ${nome(t.b_nick)}</div><span class="num">${t.ga == null ? "" : `${t.ga} x ${t.gb}`}</span>${t.winner_nick ? `<span class="tag ok">passa ${esc(t.winner_nick)}${t.pens?.by === "lucro" ? ` (lucro ${pts(t.la)} x ${pts(t.lb)})` : t.decidedBy === "folga" ? " (folga)" : ""}</span>` : ""}${t.pens?.by === "cobranças" ? (t.pens.pending ? pendente(m, t, i) : `<button class="btn small" data-pk="${esc(m.stage)}|${i}">Pênaltis ${t.pens.a} x ${t.pens.b}</button>`) : ""}</div>`).join("")}</div>`).join("")}` : ""}
       <h2 class="section-title">Rodadas<small>${d.rodadas.length} de ${d.rodadas_necessarias}</small></h2>
       ${d.rodadas.map((r) => `<div class="card" style="margin-bottom:10px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${r.n}ª rodada</b><span class="cnt">${esc(r.stage)} · ${r.date ? fmtDate(r.date) : "data a definir"}${r.date && !r.final ? " · em andamento" : ""}</span></div>${r.fixtures.map((f) => `<div class="list-row"><div class="grow" style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center"><span style="text-align:right">${nome(f.home_nick)}</span><span class="num">${placar(f)}</span><span>${nome(f.away_nick)}</span></div>${f.note ? `<span class="tag">${esc(f.note)}</span>` : ""}</div>`).join("")}</div>`).join("")}
-      <p class="muted" style="font-size:12px">Cada dia com rodada é uma rodada do campeonato. Seu lucro do dia vira gols: cada 1 de lucro = 1 gol (ex.: +2,64 = 2 gols). Mesmo número de gols é empate. Vitória vale 3, empate 1. Classificação por pontos, vitórias, saldo, gols pró e, por fim, as casas decimais do lucro.${c.format === "mata" || c.format === "copa" ? " No mata-mata, empate no placar vai para os pênaltis: passa quem teve mais lucro somando ida e volta; lucro igual vira disputa de pênaltis sorteada." : ""}</p>`;
+      <p class="muted" style="font-size:12px">Cada dia com rodada é uma rodada do campeonato. Seu lucro do dia vira gols: cada 1 de lucro = 1 gol (ex.: +2,64 = 2 gols). Mesmo número de gols é empate. Vitória vale 3, empate 1. Classificação por pontos, vitórias, saldo, gols pró e, por fim, as casas decimais do lucro.${c.format === "mata" || c.format === "copa" ? " No mata-mata, empate no placar: passa quem teve mais lucro somando ida e volta. Lucro igual: pênaltis! Os dois escolhem onde chutam e para onde pulam (5 cobranças + alternadas) até o prazo; quem não escolher, a máquina sorteia. <button class=\"linkish\" data-pkex>Ver exemplo</button>" : ""}</p>`;
   }
 
   async function load() {
@@ -167,11 +175,16 @@ export function renderRanking(view) {
   }
 
   view.addEventListener("click", (e) => {
-    const pk = e.target.closest("[data-pk]");
+    const pk = e.target.closest("[data-pk],[data-pkpick],[data-pkprazo],[data-pkex]");
     if (pk) {
-      const [stage, i] = pk.dataset.pk.split("|");
+      if (pk.hasAttribute("data-pkex")) return openExample();
+      const [stage, i] = (pk.dataset.pk ?? pk.dataset.pkpick ?? pk.dataset.pkprazo).split("|");
       const t = S.camp?.mata?.find((m) => m.stage === stage)?.ties[Number(i)];
-      if (t) openShootout(t);
+      if (!t) return;
+      const campId = S.camp.campeonato.id;
+      if (pk.dataset.pk) openShootout(t);
+      else if (pk.dataset.pkpick) openPicker(t, campId, () => loadCamp());
+      else openDeadline(t, campId, () => loadCamp());
       return;
     }
     const tb = e.target.closest("[data-tab]");

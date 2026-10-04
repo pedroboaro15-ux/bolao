@@ -506,3 +506,13 @@ input, select, textarea { font-size: 16px; }
 .pk-msg { position: absolute; left: 50%; top: 66%; transform: translate(-50%,6px); opacity: 0; transition: opacity .2s, transform .2s; font-family: var(--font-display); font-weight: 700; font-size: 20px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 12px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 .pk-msg.show { opacity: 1; transform: translate(-50%,0); }
 .pk-msg.gol { background: var(--hit); } .pk-msg.defesa, .pk-msg.fora { background: var(--bad); }
+.pk-status { flex-basis: 100%; font-size: 13px; padding-top: 6px; }
+.pk-pick-head, .pk-pick-row { display: grid; grid-template-columns: 1fr 132px 132px; gap: 10px; align-items: center; }
+.pk-pick-head { font-size: 12px; text-align: center; margin-bottom: 6px; }
+.pk-pick-row { padding: 8px 0; border-top: 1px solid var(--line); }
+.pk-pick-row > span { font-size: 13px; font-weight: 600; }
+.pk-pick { display: grid; grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; border: 3px solid var(--ink-3); border-bottom: 0; border-radius: 4px 4px 0 0; }
+.pk-pick button { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-2); padding: 0; cursor: pointer; }
+.pk-pick button:nth-child(3n) { border-right: 0; }
+.pk-pick button[aria-pressed="true"] { background: var(--primary); }
+.pk-pick button[aria-pressed="true"]::after { content: ""; display: block; width: 14px; height: 14px; margin: auto; border-radius: 50%; background: #fff; }

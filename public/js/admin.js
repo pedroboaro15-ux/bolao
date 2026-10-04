@@ -1,6 +1,7 @@
 // Área do administrador: jogos do dia → rodada, resultados, usuários, configurações, uso das APIs.
 import { $, $$, api, avatar, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, odd, openSheet, toast } from "./util.js";
 import { state, go } from "./store.js";
+import { openExample } from "./penalties.js";
 
 const TABS = [
   ["", "Jogos do dia"],
@@ -487,7 +488,8 @@ async function championships(body) {
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${people
               .map((u) => `<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" name="participants" value="${esc(u.id)}" style="width:auto" ${c?.participants ? (c.participants.includes(u.id) ? "checked" : "") : "checked"}> ${esc(u.nickname)}</label>`)
               .join("")}</div></fieldset>
-          <p class="hint" style="margin:0">Cada dia com rodada dentro do período vira uma rodada do campeonato. O lucro do dia de cada um vira gols no confronto (ex.: 1 ponto = 1 gol; lucro 2,97 = 2 gols). Vitória 3, empate 1. Empate no mata-mata: passa quem teve mais acertos (provisório, até definirmos os pênaltis).</p>
+          <p class="hint" style="margin:0">Cada dia com rodada dentro do período vira uma rodada do campeonato. O lucro do dia de cada um vira gols no confronto (1 de lucro = 1 gol; lucro 2,97 = 2 gols). Vitória 3, empate 1. Empate no mata-mata: passa quem teve mais lucro na ida e volta; lucro igual = pênaltis, que aparecem na hora para os dois palpitarem. Você define o prazo no próprio confronto (botão "Prazo" no Ranking → Campeonato); quem não palpitar, a máquina sorteia.</p>
+          <div><button class="btn small" type="button" data-pkex>Ver exemplo de pênaltis</button></div>
         </div>
         <label class="f">Competição paga? Valor por pessoa (opcional, combinado entre vocês)<input name="fee" maxlength="60" value="${esc(c?.fee ?? "")}" placeholder="Ex.: R$ 20 por pessoa (deixe em branco se for de graça)"></label>
         <label class="f">Premiação e regras (aparece no ranking)<textarea name="prize" rows="4" maxlength="600" placeholder="1º lugar: R$ 100 · 2º: R$ 50 · 3º: devolve a inscrição.">${esc(c?.prize ?? "")}</textarea></label>
@@ -530,6 +532,7 @@ async function championships(body) {
   body.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.matches("[data-pkex]")) return openExample();
     if (b.matches("[data-cancel]")) return ((editing = null), paint());
     if (b.dataset.editCh) return ((editing = b.dataset.editCh), paint(), window.scrollTo(0, 0));
     if (b.dataset.delCh && confirm("Excluir este campeonato? Os pontos continuam no ranking geral."))

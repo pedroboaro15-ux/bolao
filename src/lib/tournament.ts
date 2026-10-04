@@ -73,7 +73,10 @@ export interface TableRow {
   last5: ("V" | "E" | "D")[];
 }
 
-import { shootout, type Shootout } from "./penalties";
+import type { Shootout } from "./penalties";
+
+/** Chave de uma disputa de pênaltis: fase + os dois participantes. */
+export const shootoutKey = (stage: string, a: string, b: string) => `${stage}|${a}|${b}`;
 
 export interface Tie {
   a: string | null;
@@ -87,7 +90,7 @@ export interface Tie {
   la?: number | null;
   lb?: number | null;
   /** Pênaltis: vence quem teve mais lucro; lucro igual = disputa sorteada (cobranças). */
-  pens?: { by: "lucro" } | ({ by: "cobranças" } & Shootout);
+  pens?: { by: "lucro" } | { by: "cobranças"; key: string; pending: true } | ({ by: "cobranças"; key: string; pending?: false } & Shootout);
 }
 
 export interface TournamentView {
@@ -196,7 +199,7 @@ export function matchdaysNeeded(cfg: TournamentConfig): number {
 const KO_NAMES: Record<number, string> = { 2: "Final", 4: "Semifinal", 8: "Quartas de final", 16: "Oitavas de final" };
 
 /** Monta tudo: grupos/tabela, rodadas com os confrontos e o mata-mata. */
-export function buildTournament(cfg: TournamentConfig, days: Matchday[]): TournamentView {
+export function buildTournament(cfg: TournamentConfig, days: Matchday[], shootouts: Map<string, Shootout> = new Map()): TournamentView {
   const view: TournamentView = { groups: [], rounds: [], knockout: [], champion: null };
   const step = cfg.goalStep;
   let cursor = 0; // próximo dia livre
@@ -288,9 +291,11 @@ export function buildTournament(cfg: TournamentConfig, days: Matchday[]): Tourna
           decidedBy = "pênaltis";
           if (ca !== cb) (winner = ca > cb ? a : b), (pens = { by: "lucro" });
           else {
-            const so = shootout(`${stage}|${a}|${b}|${legDays.map((d) => d?.date).join("|")}`);
-            winner = so.winner === "a" ? a : b;
-            pens = { by: "cobranças", ...so };
+            // pênaltis com palpite: sem resultado gravado, a vaga fica em aberto
+            const key = shootoutKey(stage, a, b);
+            const so = shootouts.get(key);
+            if (so) (winner = so.winner === "a" ? a : b), (pens = { by: "cobranças", key, ...so });
+            else pens = { by: "cobranças", key, pending: true };
           }
         }
       }
