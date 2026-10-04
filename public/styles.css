@@ -493,14 +493,16 @@ input, select, textarea { font-size: 16px; }
   background-image: linear-gradient(180deg, #1b2a22 0 52%, transparent 52%),
     repeating-linear-gradient(180deg, #2f7349 0 9%, #2a6842 9% 18%);
 }
-.pk-goal { position: absolute; inset: 4% 0 auto 0; width: 100%; height: 60%; }
-.pk-net { transform-origin: 50% 0; transform-box: fill-box; }
+.pk-goal, .pk-net { position: absolute; left: 0; top: 4%; width: 100%; height: 60%; }
+.pk-stage { --pk-cuff: #17408b; }
+.pk-glove { position: absolute; left: 50%; top: 40%; width: 11%; opacity: 0; transform: translate(-50%,-50%); filter: drop-shadow(0 3px 3px rgba(0,0,0,.35)); }
+.pk-stage[data-style="x"] .pk-glove { display: none; }
+.pk-x { position: absolute; width: 13%; aspect-ratio: 1; transform: translate(-50%,-50%) scale(.4); opacity: 0; pointer-events: none; }
+.pk-x::before, .pk-x::after { content: ""; position: absolute; left: 44%; top: -4%; width: 12%; height: 108%; border-radius: 99px; background: var(--bad); box-shadow: 0 2px 6px rgba(0,0,0,.35); transform: rotate(45deg); }
+.pk-x::after { transform: rotate(-45deg); }
+.pk-x.show { opacity: 1; transform: translate(-50%,-50%) scale(1); transition: transform .28s cubic-bezier(.3,1.6,.5,1), opacity .12s; }
 .pk-spot { position: absolute; left: 50%; top: 88%; width: 2.2%; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.8); transform: translate(-50%,-50%); }
 .pk-ball { position: absolute; left: 50%; top: 86%; width: 9%; transform: translate(-50%,-50%); filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
-.pk-keeper { position: absolute; left: 50%; top: 27%; width: 9%; height: 34%; transform: translate(-50%,0); transform-origin: 50% 90%; }
-.pk-keeper i { position: absolute; inset: 18% 22% 0; border-radius: 40% 40% 12% 12%; background: #f2c230; }
-.pk-keeper::before { content: ""; position: absolute; left: -45%; right: -45%; top: 26%; height: 9%; border-radius: 99px; background: #f2c230; }
-.pk-keeper::after { content: ""; position: absolute; left: 30%; right: 30%; top: 0; aspect-ratio: 1; border-radius: 50%; background: #e8b98f; }
 .pk-msg { position: absolute; left: 50%; top: 66%; transform: translate(-50%,6px); opacity: 0; transition: opacity .2s, transform .2s; font-family: var(--font-display); font-weight: 700; font-size: 20px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 12px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 .pk-msg.show { opacity: 1; transform: translate(-50%,0); }
 .pk-msg.gol { background: var(--hit); } .pk-msg.defesa, .pk-msg.fora { background: var(--bad); }
