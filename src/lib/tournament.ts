@@ -73,6 +73,8 @@ export interface TableRow {
   last5: ("V" | "E" | "D")[];
 }
 
+import { shootout, type Shootout } from "./penalties";
+
 export interface Tie {
   a: string | null;
   b: string | null;
@@ -81,6 +83,11 @@ export interface Tie {
   winner: string | null;
   /** "pênaltis" quando o agregado empatou. */
   decidedBy?: string;
+  /** Lucro somado nos jogos do confronto (ida + volta). */
+  la?: number | null;
+  lb?: number | null;
+  /** Pênaltis: vence quem teve mais lucro; lucro igual = disputa sorteada (cobranças). */
+  pens?: { by: "lucro" } | ({ by: "cobranças" } & Shootout);
 }
 
 export interface TournamentView {
@@ -258,7 +265,7 @@ export function buildTournament(cfg: TournamentConfig, days: Matchday[]): Tourna
         next.push(w);
         continue;
       }
-      let ga = 0, gb = 0, ha = 0, hb = 0, done = true, any = false;
+      let ga = 0, gb = 0, la = 0, lb = 0, done = true, any = false;
       legDays.forEach((day, l) => {
         const home = l === 0 ? a : b;
         const away = l === 0 ? b : a;
@@ -267,21 +274,27 @@ export function buildTournament(cfg: TournamentConfig, days: Matchday[]): Tourna
         if (!res || !res.final) done = false;
         if (res) {
           any = true;
-          if (l === 0) (ga += res.hg, gb += res.ag, ha += res.hh, hb += res.ha);
-          else (ga += res.ag, gb += res.hg, ha += res.ha, hb += res.hh);
+          if (l === 0) (ga += res.hg, gb += res.ag, la += res.lh, lb += res.la);
+          else (ga += res.ag, gb += res.hg, la += res.la, lb += res.lh);
         }
       });
       let winner: string | null = null;
       let decidedBy: string | undefined;
+      let pens: Tie["pens"];
+      const ca = Math.round(la * 100), cb = Math.round(lb * 100);
       if (a && b && done) {
         if (ga !== gb) winner = ga > gb ? a : b;
         else {
           decidedBy = "pênaltis";
-          const sa = seeds.indexOf(a), sb = seeds.indexOf(b);
-          winner = ha !== hb ? (ha > hb ? a : b) : sa <= sb ? a : b;
+          if (ca !== cb) (winner = ca > cb ? a : b), (pens = { by: "lucro" });
+          else {
+            const so = shootout(`${stage}|${a}|${b}|${legDays.map((d) => d?.date).join("|")}`);
+            winner = so.winner === "a" ? a : b;
+            pens = { by: "cobranças", ...so };
+          }
         }
       }
-      ties.push({ a, b, ga: any ? ga : null, gb: any ? gb : null, winner, decidedBy });
+      ties.push({ a, b, ga: any ? ga : null, gb: any ? gb : null, la: any ? ca / 100 : null, lb: any ? cb / 100 : null, winner, decidedBy, pens });
       next.push(winner);
     }
     roundFixtures.forEach((fx, l) => {

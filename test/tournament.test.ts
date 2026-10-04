@@ -89,11 +89,12 @@ describe("mata-mata", () => {
     expect(v.champion).toBe("c");
   });
 
-  it("empate vai para os pênaltis: mais acertos; depois a melhor cabeça de chave", () => {
+  it("empate vai para os pênaltis: mais lucro; lucro igual = cobranças sorteadas", () => {
     const v = buildTournament(cfg({ format: "mata", participants: ["a", "b"] }), [day({ a: [1.5, 2], b: [1.2, 4] })]);
-    expect(v.knockout[0].ties[0]).toMatchObject({ ga: 1, gb: 1, winner: "b", decidedBy: "pênaltis" });
+    expect(v.knockout[0].ties[0]).toMatchObject({ ga: 1, gb: 1, winner: "a", decidedBy: "pênaltis", pens: { by: "lucro" } });
     const v2 = buildTournament(cfg({ format: "mata", participants: ["a", "b"] }), [day({ a: [1, 2], b: [1, 2] })]);
-    expect(v2.champion).toBe("a");
+    expect(v2.knockout[0].ties[0].pens?.by).toBe("cobranças");
+    expect(["a", "b"]).toContain(v2.champion);
   });
 
   it("número que não fecha a chave dá folga para as melhores cabeças", () => {

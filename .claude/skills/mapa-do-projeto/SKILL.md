@@ -68,6 +68,7 @@ Sem pagamento no site: dinheiro, quando houver, é combinado entre eles.
 - Jogo adiado/cancelado = "excluído da rodada" (ninguém pontua).
 - Dia do bolão = 06:00 → 06:00 de São Paulo. A tela de início mostra **só a rodada de hoje**; sem rodada, abre votos em jogos e sugestões.
 - Campeonato de confrontos: cada dia com rodada no período = uma rodada; **1 de lucro = 1 gol** (fixo); gols iguais = empate no confronto; as casas decimais do lucro só desempatam a classificação; V=3, E=1.
+- Mata-mata empatado: mais lucro na ida+volta; lucro igual = pênaltis sorteados (`src/lib/penalties.ts`, tela `public/js/penalties.js`).
 - Sem ficha do time (últimos/próximos jogos): o plano grátis da API não libera. Não mostrar ao jogador explicações técnicas de erro.
 
 ## 6. Como publicar (fluxo atual)
@@ -88,7 +89,6 @@ Sem pagamento no site: dinheiro, quando houver, é combinado entre eles.
 - Segredos (no Cloudflare, nunca no git): `SUPABASE_SERVICE_KEY`, `SESSION_SECRET`, `API_FOOTBALL_KEY`, `ODDS_API_KEY`, `VAPID_PRIVATE_KEY`.
 
 ## 8. Em aberto (decisão do dono)
-- Pênaltis no mata-mata (hoje provisório: mais acertos no confronto, depois a melhor cabeça de chave; ideia: 4 palpites extras).
 - Notificações push: chaves VAPID não configuradas; enviar para muitos de uma vez estoura a CPU do plano grátis (precisa de fila).
 - Basquete e UFC: em espera.
 

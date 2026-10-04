@@ -475,3 +475,32 @@ input, select, textarea { font-size: 16px; }
 .hs-pts.ok { color: var(--ok); }
 .hs-pts.zero { color: var(--ink-3); }
 .hs-note { text-align: center; font-size: 13px; margin-top: 12px; }
+
+/* ---------- pênaltis ---------- */
+.pk-score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-bottom: 10px; }
+.pk-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pk-side b { font-family: var(--font-display); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-side.r { align-items: flex-end; text-align: right; }
+.pk-num { font-family: var(--font-display); font-size: 28px; font-weight: 700; }
+.pk-dots { display: flex; gap: 4px; flex-wrap: wrap; min-height: 10px; }
+.pk-side.r .pk-dots { justify-content: flex-end; }
+.pk-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--hit); }
+.pk-dots i.no { background: var(--bad); }
+.pk-stage {
+  --pk-post: #fff; --pk-line: rgba(255,255,255,.55);
+  position: relative; aspect-ratio: 16 / 11; border-radius: 6px; overflow: hidden; color: rgba(255,255,255,.7);
+  background: linear-gradient(#1f3d2b 0 58%, #2c6b45 58% 100%);
+  background-image: linear-gradient(180deg, #1b2a22 0 52%, transparent 52%),
+    repeating-linear-gradient(180deg, #2f7349 0 9%, #2a6842 9% 18%);
+}
+.pk-goal { position: absolute; inset: 4% 0 auto 0; width: 100%; height: 60%; }
+.pk-net { transform-origin: 50% 0; transform-box: fill-box; }
+.pk-spot { position: absolute; left: 50%; top: 88%; width: 2.2%; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.8); transform: translate(-50%,-50%); }
+.pk-ball { position: absolute; left: 50%; top: 86%; width: 9%; transform: translate(-50%,-50%); filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+.pk-keeper { position: absolute; left: 50%; top: 27%; width: 9%; height: 34%; transform: translate(-50%,0); transform-origin: 50% 90%; }
+.pk-keeper i { position: absolute; inset: 18% 22% 0; border-radius: 40% 40% 12% 12%; background: #f2c230; }
+.pk-keeper::before { content: ""; position: absolute; left: -45%; right: -45%; top: 26%; height: 9%; border-radius: 99px; background: #f2c230; }
+.pk-keeper::after { content: ""; position: absolute; left: 30%; right: 30%; top: 0; aspect-ratio: 1; border-radius: 50%; background: #e8b98f; }
+.pk-msg { position: absolute; left: 50%; top: 66%; transform: translate(-50%,6px); opacity: 0; transition: opacity .2s, transform .2s; font-family: var(--font-display); font-weight: 700; font-size: 20px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 12px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
+.pk-msg.show { opacity: 1; transform: translate(-50%,0); }
+.pk-msg.gol { background: var(--hit); } .pk-msg.defesa, .pk-msg.fora { background: var(--bad); }
