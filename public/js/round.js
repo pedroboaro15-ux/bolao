@@ -1,7 +1,6 @@
 // Tela principal: rodada atual. Palpites salvos automaticamente (sem cupom).
 import { api, crest, esc, fmtClock, fmtDate, fmtWhen, icon, leagueIcon, liveLabel, now, odd, pts, signed, syncClock, toast, zebraBlock } from "./util.js";
 import { go, state } from "./store.js";
-import { openTeam } from "./team.js";
 import { mountQuestions } from "./questions.js";
 import { renderPedidos } from "./pedidos.js";
 
@@ -126,11 +125,6 @@ function handle(e) {
     return paint();
   }
   if (act === "round") return go(!t.dataset.v || t.dataset.v === S.data.atual ? "/" : `/rodada/${t.dataset.v}`);
-  if (act === "team") {
-    const [id, ...rest] = t.dataset.v.split("|");
-    const team = m ? (m.home.id === Number(id) ? m.home : m.away) : { id: Number(id), name: rest.join("|") };
-    return openTeam(team);
-  }
   if (!m || isLocked(m)) return;
 
   const d = (S.drafts[m.id] ??= blank());
@@ -340,7 +334,7 @@ function teamRow(m, side, showScore) {
   const sc = showScore ? (side === "h" ? m.home_goals : m.away_goals) : live ? (side === "h" ? live.home : live.away) : null;
   const op = side === "h" ? m.away_goals : m.home_goals;
   const lose = showScore && sc < op;
-  return `<button class="team${lose ? " lose" : ""}" data-act="team" data-m="${m.id}" data-v="${t.id}|${esc(t.name)}">${crest(t)}<span class="tn">${esc(t.name)}</span><span class="sc num${live ? " live" : ""}">${sc ?? ""}</span></button>`;
+  return `<div class="team${lose ? " lose" : ""}">${crest(t)}<span class="tn">${esc(t.name)}</span><span class="sc num${live ? " live" : ""}">${sc ?? ""}</span></div>`;
 }
 
 function matchCard(m) {
@@ -383,7 +377,7 @@ function matchCard(m) {
         : `<div class="stp"><button data-act="goal" data-m="${m.id}" data-side="${side}" data-d="-1" aria-label="Diminuir" ${(v ?? 0) <= 0 ? "disabled" : ""}>−</button><span class="v">${v ?? "–"}</span><button data-act="goal" data-m="${m.id}" data-side="${side}" data-d="1" aria-label="Aumentar" ${(v ?? 0) >= 9 ? "disabled" : ""}>+</button></div>`;
     const csOdd = hg != null && ag != null ? m.cs?.[`${hg}-${ag}`] : null;
     extra = `<div class="cs">${stp("h", hg)}<span class="x">x</span>${stp("a", ag)}</div>${
-      locked ? "" : hg == null ? `<div class="hint">Defina o placar: o vencedor sai dele.</div>` : csOdd ? `<div class="hint">Acertou o placar exato: <b>+${pts(csOdd - 1)}</b> (no lugar do vencedor). Errou o placar mas acertou o vencedor: <b>+${pts((m.odds_1x2?.[cur?.pick_1x2] ?? 1) - 1)}</b>.</div>` : `<div class="hint">Odd do placar ainda indisponível.</div>`
+      locked ? "" : hg == null ? `<div class="hint">Defina o placar: o vencedor sai dele.</div>` : csOdd ? `<div class="hint">Acertou o placar exato: <b>+${pts(csOdd - 1)}</b> (no lugar do vencedor). Errou o placar mas acertou o vencedor: <b>+${pts((m.odds_1x2?.[cur?.pick_1x2] ?? 1) - 1)}</b>.</div>` : ""
     }`;
   }
   const modeLabel = mode === "ou" ? "Gols" : mode === "cs" ? "Placar exato" : "Só o vencedor";

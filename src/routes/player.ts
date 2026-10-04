@@ -345,29 +345,6 @@ export function playerRoutes() {
     });
   });
 
-  // Ficha do time: últimos 5 e próximos 3. Pode não estar disponível no plano grátis; nunca derruba a tela.
-  r.get("/times/:id", async (c) => {
-    const { repo } = c.get("ctx");
-    const teamId = Number(c.req.param("id"));
-    if (!Number.isInteger(teamId) || teamId <= 0) throw badRequest("Time inválido");
-    const cached = await repo.db.get<any>(`team_cache/${teamId}`);
-    const ttl = cached?.data.erro ? 3600_000 : 12 * 3600_000;
-    if (cached && Date.now() - cached.data.fetched_at.getTime() < ttl) return c.json(cached.data);
-
-    const settings = await repo.settings();
-    const api = new ApiFootball(c.env, repo, settings);
-    const doc: any = { ultimos: [], proximos: [], fetched_at: new Date(), erro: null };
-    const slim = (f: any) => ({ id: f.id, kickoff: f.kickoff, status: f.status, league: f.league.name, home: f.home, away: f.away, home_goals: f.home_goals, away_goals: f.away_goals });
-    try {
-      doc.ultimos = (await api.teamFixtures(teamId, "last", 5)).map(slim);
-      doc.proximos = (await api.teamFixtures(teamId, "next", 3)).map(slim);
-    } catch (e: any) {
-      doc.erro = e.message;
-    }
-    await repo.db.commit([{ op: "set", path: `team_cache/${teamId}`, data: doc }]);
-    return c.json(doc);
-  });
-
   // ---------- perguntas do dia (também basquete e UFC) ----------
 
   r.get("/perguntas", async (c) => {

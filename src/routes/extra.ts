@@ -83,14 +83,14 @@ export function parseChampionship(b: any): Omit<Championship, "created_at"> {
   const groups = Math.max(1, Math.min(8, Math.floor(Number(b?.groups) || 1)));
   const advance = Math.max(1, Math.min(4, Math.floor(Number(b?.advance) || 2)));
   if ((format === "grupos" || format === "copa") && participants.length < groups * 2) throw badRequest(`${groups} grupos precisam de pelo menos ${groups * 2} participantes`);
-  const goal_step = Math.round(Math.min(10, Math.max(0.1, Number(String(b?.goal_step ?? "1").replace(",", ".")) || 1)) * 100) / 100;
+  const goal_step = 1; // 1 de lucro = 1 gol (regra fixa)
   return { name, start_date, end_date, prize, fee, format, legs, groups, advance, goal_step, participants };
 }
 
 /** Configuração do confronto a partir do que está gravado. */
 export const tournamentConfig = (ch: Championship): TournamentConfig | null =>
   ch.format && ch.participants?.length
-    ? { format: ch.format, legs: ch.legs === 2 ? 2 : 1, participants: ch.participants, groups: ch.groups ?? 1, advance: ch.advance ?? 2, goalStep: ch.goal_step ?? 1 }
+    ? { format: ch.format, legs: ch.legs === 2 ? 2 : 1, participants: ch.participants, groups: ch.groups ?? 1, advance: ch.advance ?? 2, goalStep: 1 }
     : null;
 
 /**

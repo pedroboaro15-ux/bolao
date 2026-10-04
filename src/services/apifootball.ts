@@ -202,11 +202,6 @@ export class ApiFootball {
     return {};
   }
 
-  async teamFixtures(teamId: number, kind: "last" | "next", n: number): Promise<FixtureView[]> {
-    const rows = await this.call("/fixtures", { team: teamId, [kind]: n, timezone: "America/Sao_Paulo" });
-    return rows.map(parseFixture);
-  }
-
   /** Diagnóstico do plano: /status não gasta cota; depois testa uma busca por data. */
   async diagnose(date: string) {
     const status = await fetch(`${BASE}/status`, { headers: { "x-apisports-key": this.env.API_FOOTBALL_KEY ?? "" } })

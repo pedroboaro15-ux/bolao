@@ -79,7 +79,6 @@ describe("schema.sql cobre tudo que o app grava", () => {
     const dia = await json(await call("/api/admin/jogos-do-dia", "admin"));
     await call("/api/admin/config", "admin", "PUT", { maxMatchesPerDay: 30 });
     await call("/api/admin/rodadas", "admin", "POST", { date: dia.date, title: "Extra", fixtureIds: dia.jogos.slice(0, 2).map((j: any) => j.id), open: true });
-    await call("/api/times/1", "lucas");
     // pedidos só existem em dia sem rodada: apaga as de hoje e vota/sugere
     const hoje = (await json(await call("/api/rodada/atual", "lucas"))).hoje;
     for (const r of (await json(await call("/api/admin/rodadas", "admin"))).rodadas.filter((x: any) => x.date === hoje)) await call(`/api/admin/rodadas/${r.id}`, "admin", "DELETE");

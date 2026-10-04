@@ -121,3 +121,11 @@ describe("copa (grupos + mata-mata)", () => {
     expect(depois.champion).toBe("a");
   });
 });
+
+describe("casas decimais", () => {
+  it("mesmo número de gols é empate; as decimais só desempatam a classificação", () => {
+    const t = table(["a", "b"], [{ home: "a", away: "b", hg: goalsOf(2.1, 1), ag: goalsOf(2.9, 1), lh: 2.1, la: 2.9 }]);
+    expect(t.every((r) => r.E === 1 && r.P === 1)).toBe(true);
+    expect(t.map((r) => [r.user_id, r.pos])).toEqual([["b", 1], ["a", 2]]);
+  });
+});

@@ -1,6 +1,7 @@
 /**
  * Campeonato de confrontos 1×1. Cada "rodada do campeonato" é um dia do bolão (com rodada de jogos) dentro do período.
- * O lucro do dia de cada participante vira GOLS no confronto: gols = piso(lucro / pontosPorGol).
+ * O lucro do dia de cada participante vira GOLS no confronto: gols = piso(lucro): 1 de lucro = 1 gol.
+ * No confronto, mesmo número de gols é empate; as casas decimais só desempatam a classificação.
  *
  * Formatos (o admin escolhe): pontos corridos (todos contra todos), grupos, mata-mata e copa (grupos + mata-mata),
  * cada um só ida ou ida e volta. Tudo é calculado na leitura a partir dos resultados de cada dia: nada é gravado.
@@ -66,6 +67,8 @@ export interface TableRow {
   GP: number;
   GC: number;
   SG: number;
+  /** Lucro somado nos confrontos: só desempata (as casas decimais que não viraram gol). */
+  L: number;
   /** Últimos 5 confrontos, do mais antigo para o mais recente: "V", "E" ou "D". */
   last5: ("V" | "E" | "D")[];
 }
@@ -124,11 +127,11 @@ export function splitGroups(players: string[], groups: number): string[][] {
 const groupName = (i: number) => `Grupo ${String.fromCharCode(65 + i)}`;
 
 function emptyRow(id: string): TableRow {
-  return { user_id: id, pos: 0, P: 0, J: 0, V: 0, E: 0, D: 0, GP: 0, GC: 0, SG: 0, last5: [] };
+  return { user_id: id, pos: 0, P: 0, J: 0, V: 0, E: 0, D: 0, GP: 0, GC: 0, SG: 0, L: 0, last5: [] };
 }
 
-/** Classificação: pontos (V=3, E=1), vitórias, saldo, gols pró. Tudo igual = mesma posição. */
-export function table(players: string[], games: { home: string; away: string; hg: number; ag: number }[]): TableRow[] {
+/** Classificação: pontos (V=3, E=1), vitórias, saldo, gols pró e, por fim, o lucro com as casas decimais. Tudo igual = mesma posição. */
+export function table(players: string[], games: { home: string; away: string; hg: number; ag: number; lh?: number; la?: number }[]): TableRow[] {
   const rows = new Map(players.map((p) => [p, emptyRow(p)]));
   const hist = new Map<string, ("V" | "E" | "D")[]>(players.map((p) => [p, []]));
   for (const g of games) {
@@ -137,6 +140,7 @@ export function table(players: string[], games: { home: string; away: string; hg
     if (!h || !a) continue;
     h.J++, a.J++;
     h.GP += g.hg, h.GC += g.ag, a.GP += g.ag, a.GC += g.hg;
+    h.L += g.lh ?? 0, a.L += g.la ?? 0;
     const rh = g.hg > g.ag ? "V" : g.hg === g.ag ? "E" : "D";
     const ra = rh === "V" ? "D" : rh === "D" ? "V" : "E";
     for (const [row, res] of [[h, rh], [a, ra]] as const) {
@@ -148,7 +152,7 @@ export function table(players: string[], games: { home: string; away: string; hg
     hist.get(g.away)!.push(ra);
   }
   const list = [...rows.values()].map((r) => ({ ...r, SG: r.GP - r.GC, last5: hist.get(r.user_id)!.slice(-5) }));
-  const key = (r: TableRow) => [r.P, r.V, r.SG, r.GP];
+  const key = (r: TableRow) => [r.P, r.V, r.SG, r.GP, Math.round(r.L * 100)];
   const cmp = (x: TableRow, y: TableRow) => {
     const a = key(x), b = key(y);
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i];
@@ -166,7 +170,7 @@ function play(day: Matchday | undefined, home: string, away: string, step: numbe
   if (!day || !day.started) return null;
   const sh = day.scores.get(home);
   const sa = day.scores.get(away);
-  return { hg: goalsOf(sh?.points ?? 0, step), ag: goalsOf(sa?.points ?? 0, step), hh: sh?.hits ?? 0, ha: sa?.hits ?? 0, final: day.final };
+  return { hg: goalsOf(sh?.points ?? 0, step), ag: goalsOf(sa?.points ?? 0, step), lh: sh?.points ?? 0, la: sa?.points ?? 0, hh: sh?.hits ?? 0, ha: sa?.hits ?? 0, final: day.final };
 }
 
 /** Quantos dias (rodadas do campeonato) o formato precisa. */
@@ -200,7 +204,7 @@ export function buildTournament(cfg: TournamentConfig, days: Matchday[]): Tourna
       return cfg.legs === 2 ? [...rr, ...rr.map((r) => r.map(([h, a]) => [a, h] as [string, string]))] : rr;
     });
     const total = Math.max(...schedules.map((s) => s.length));
-    const played = groups.map(() => [] as { home: string; away: string; hg: number; ag: number }[]);
+    const played = groups.map(() => [] as { home: string; away: string; hg: number; ag: number; lh: number; la: number }[]);
     for (let r = 0; r < total; r++) {
       const day = dayAt(cursor);
       const fixtures: Fixture[] = [];
@@ -208,7 +212,7 @@ export function buildTournament(cfg: TournamentConfig, days: Matchday[]): Tourna
         for (const [home, away] of sch[r] ?? []) {
           const res = play(day, home, away, step);
           fixtures.push({ home, away, hg: res?.hg ?? null, ag: res?.ag ?? null, note: groups.length > 1 ? groupName(gi) : undefined });
-          if (res) played[gi].push({ home, away, hg: res.hg, ag: res.ag });
+          if (res) played[gi].push({ home, away, hg: res.hg, ag: res.ag, lh: res.lh, la: res.la });
         }
       });
       view.rounds.push({ n: r + 1, date: day?.date ?? null, stage: cfg.format === "pontos" ? "Pontos corridos" : "Fase de grupos", final: !!day?.final, fixtures });

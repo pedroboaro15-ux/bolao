@@ -171,7 +171,6 @@ input[type="checkbox"] { width: 18px; height: 18px; padding: 0; accent-color: va
 .badge.open { color: var(--brand-text); padding-right: 0; }
 .teams { display: grid; gap: 6px; }
 .team { font-family: var(--font-display); display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: var(--s2); background: none; border: 0; padding: 0; text-align: left; font-size: var(--t-lg); font-weight: 600; }
-.team:hover .tn { text-decoration: underline; text-underline-offset: 3px; }
 .team .sc { font-size: var(--t-lg); font-weight: 700; }
 .team.lose { color: var(--ink-2); }
 
@@ -347,7 +346,6 @@ input, select, textarea { font-size: 16px; }
 }
 @media (hover: none) {
   .side-item:hover, .iconbtn:hover { background: none; }
-  .team:hover .tn { text-decoration: none; }
   .nav a:hover { color: #a0a0a0; }
 }
 

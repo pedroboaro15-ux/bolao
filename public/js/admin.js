@@ -480,7 +480,7 @@ async function championships(body) {
         <label class="f">Formato<select name="format">${Object.entries(FORMATOS).map(([k, t]) => `<option value="${k}" ${(c?.format ?? "") === k ? "selected" : ""}>${t}</option>`).join("")}</select></label>
         <div data-conf ${c?.format ? "" : "hidden"} class="form" style="gap:12px">
           <div class="cols2"><label class="f">Jogos<select name="legs"><option value="1" ${c?.legs !== 2 ? "selected" : ""}>Só ida</option><option value="2" ${c?.legs === 2 ? "selected" : ""}>Ida e volta</option></select></label>
-            <label class="f">Quantos pontos de lucro valem 1 gol<input name="goal_step" inputmode="decimal" value="${c?.goal_step ?? 1}"></label></div>
+            </div>
           <div class="cols2"><label class="f" data-groups ${c?.format === "grupos" || c?.format === "copa" ? "" : "hidden"}>Quantos grupos<input name="groups" type="number" min="1" max="8" value="${c?.groups ?? 2}"></label>
             <label class="f" data-advance ${c?.format === "copa" ? "" : "hidden"}>Passam de cada grupo<input name="advance" type="number" min="1" max="4" value="${c?.advance ?? 2}"></label></div>
           <fieldset class="card card-pad" style="border:1px solid var(--line)"><legend style="font-weight:600;padding:0 6px">Participantes (a ordem de marcação é a cabeça de chave)</legend>

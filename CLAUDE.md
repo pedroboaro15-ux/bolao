@@ -289,7 +289,9 @@ Cada etapa deve ter testes (Vitest) para o cálculo de pontos, a remoção da ma
 - **Bola clássica preta e branca** (`public/icons/soccerball.svg`, Wikimedia Commons, domínio público) substituiu a Trionda em tudo: topo, login, favicon, ícones do app e prévia do link.
 - **Logo:** bola própria no estilo da Trionda (faixas curvas vermelha, verde e azul, cápsula azul com estrelas e "BOLÃO"), sem emblema da FIFA nem marcas. Ícones em `public/icons/` (favicon e `ball-64.png` sem texto; ícones do app e prévia do link com o nome).
 - **Skill `mapa-do-projeto`** (`.claude/skills/mapa-do-projeto/SKILL.md`): mapa do projeto, preferências do dono, fluxo de publicação e decisões em aberto. Ler no início de cada sessão e manter atualizado.
-- **Ainda em aberto (decisão do dono):** a regra lucro → gol definitiva (hoje: `goal_step`, padrão 1 ponto = 1 gol, ajustável por campeonato) e os **pênaltis** do mata-mata (hoje, provisório: mais acertos no confronto e depois a melhor cabeça de chave).
+- **Lucro → gol (definitivo):** 1 de lucro = 1 gol (`goal_step` fixo em 1; o campo saiu do admin). No confronto do dia, mesmo número de gols é empate; as **casas decimais do lucro** só desempatam a classificação (depois de pontos, vitórias, saldo e gols pró).
+- **Ficha do time removida** (últimos 5 / próximos 3): o plano grátis da API-Football não libera `last`/`next`. Escudos não abrem mais nada; rota `/api/times/:id` e `teamFixtures` saíram (a tabela `team_cache` fica, sem uso). Também saiu o aviso "Odd do placar ainda indisponível".
+- **Ainda em aberto (decisão do dono):** os **pênaltis** do mata-mata (hoje, provisório: mais acertos no confronto e depois a melhor cabeça de chave).
 
 ## Migração para o Supabase e enxugamento (o que mudou)
 - **Firebase saiu por completo** (Firestore, Auth, `firebase-tools`, regras e índices). O banco agora é o Postgres do Supabase e o login é o Supabase Auth.

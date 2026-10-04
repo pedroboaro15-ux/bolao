@@ -2,7 +2,6 @@
 import { toast } from "./util.js";
 import { api, avatar, crest, esc, fmtDate, fmtMonth, fmtWhen, icon, leagueIcon, liveLabel, odd, pts, signed, zebraBlock, zebraLabel } from "./util.js";
 import { state } from "./store.js";
-import { openTeam } from "./team.js";
 
 const fail = (view, e) => (view.innerHTML = `<div class="page narrow"><div class="card card-pad"><p class="error">${esc(e.message)}</p></div></div>`);
 
@@ -72,7 +71,7 @@ export function renderRanking(view) {
       ${d.mata.length ? `<h2 class="section-title">Mata-mata</h2>${d.mata.map((m) => `<div class="card" style="margin-bottom:12px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${esc(m.stage)}</b></div>${m.ties.map((t) => `<div class="list-row"><div class="grow">${nome(t.a_nick)} <span class="muted">x</span> ${nome(t.b_nick)}</div><span class="num">${t.ga == null ? "" : `${t.ga} x ${t.gb}`}</span>${t.winner_nick ? `<span class="tag ok">passa ${esc(t.winner_nick)}${t.decidedBy === "pênaltis" ? " (pênaltis)" : t.decidedBy === "folga" ? " (folga)" : ""}</span>` : ""}</div>`).join("")}</div>`).join("")}` : ""}
       <h2 class="section-title">Rodadas<small>${d.rodadas.length} de ${d.rodadas_necessarias}</small></h2>
       ${d.rodadas.map((r) => `<div class="card" style="margin-bottom:10px;overflow:hidden"><div class="group-h" style="cursor:default"><b>${r.n}ª rodada</b><span class="cnt">${esc(r.stage)} · ${r.date ? fmtDate(r.date) : "data a definir"}${r.date && !r.final ? " · em andamento" : ""}</span></div>${r.fixtures.map((f) => `<div class="list-row"><div class="grow" style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center"><span style="text-align:right">${nome(f.home_nick)}</span><span class="num">${placar(f)}</span><span>${nome(f.away_nick)}</span></div>${f.note ? `<span class="tag">${esc(f.note)}</span>` : ""}</div>`).join("")}</div>`).join("")}
-      <p class="muted" style="font-size:12px">Cada dia com rodada é uma rodada do campeonato. Seu lucro do dia vira gols (${c.goal_step ?? 1} ponto${(c.goal_step ?? 1) === 1 ? "" : "s"} = 1 gol). Vitória vale 3, empate 1. Classificação por pontos, vitórias, saldo e gols pró; tudo igual divide a posição.${c.format === "mata" || c.format === "copa" ? " No mata-mata, empate no placar vai para os pênaltis: passa quem teve mais acertos (regra provisória)." : ""}</p>`;
+      <p class="muted" style="font-size:12px">Cada dia com rodada é uma rodada do campeonato. Seu lucro do dia vira gols: cada 1 de lucro = 1 gol (ex.: +2,64 = 2 gols). Mesmo número de gols é empate. Vitória vale 3, empate 1. Classificação por pontos, vitórias, saldo, gols pró e, por fim, as casas decimais do lucro.${c.format === "mata" || c.format === "copa" ? " No mata-mata, empate no placar vai para os pênaltis: passa quem teve mais acertos (regra provisória)." : ""}</p>`;
   }
 
   async function load() {
@@ -287,9 +286,9 @@ export async function renderMatch(view, id) {
       <div class="wm">${esc(j.home.name)}</div>
       <div class="muted" style="display:flex;justify-content:center;gap:8px;align-items:center;margin-bottom:12px">${leagueIcon(j.league)} ${esc(j.league.name)} · ${fmtWhen(j.kickoff_utc)}</div>
       <div class="row">
-        <button class="team col" data-team="home">${crest(j.home, "xl")}<span class="tn">${esc(j.home.name)}</span></button>
+        <div class="team col">${crest(j.home, "xl")}<span class="tn">${esc(j.home.name)}</span></div>
         <div>${done ? `<div class="final">${j.home_goals} - ${j.away_goals}</div><span class="tag ${j.voided ? "" : "ok"}">${j.voided ? "Excluído da rodada" : "Final"}</span>` : j.live ? `<div class="final">${j.live.home ?? 0} - ${j.live.away ?? 0}</div><span class="tag live">${esc(liveLabel(j.live))}</span>` : `<div class="final" style="font-size:38px">${j.locked ? "x" : "vs"}</div>${j.locked ? '<span class="tag live">Em andamento</span>' : ""}`}</div>
-        <button class="team col" data-team="away">${crest(j.away, "xl")}<span class="tn">${esc(j.away.name)}</span></button>
+        <div class="team col">${crest(j.away, "xl")}<span class="tn">${esc(j.away.name)}</span></div>
       </div>
       ${j.odds_1x2 ? `<div class="statgrid" style="margin-top:16px"><div class="stat"><div class="l">${j.locked ? "Odd justa · " : ""}Casa</div><div class="v">${odd(j.odds_1x2["1"])}</div></div><div class="stat dark"><div class="l">Empate</div><div class="v">${odd(j.odds_1x2.X)}</div></div><div class="stat"><div class="l">Fora</div><div class="v">${odd(j.odds_1x2["2"])}</div></div></div>` : ""}
     </div>
@@ -307,7 +306,6 @@ export async function renderMatch(view, id) {
         : `<div class="notice">${icon("lock").replace("<svg", '<svg width="14" height="14" style="vertical-align:-2px"')} Os palpites dos outros aparecem quando o jogo começar (${fmtWhen(j.kickoff_utc)}).</div>`
     }
   </div>`;
-  view.querySelectorAll("[data-team]").forEach((b) => (b.onclick = () => openTeam(j[b.dataset.team])));
   view.querySelector(".page").insertAdjacentHTML("beforeend", `<h2 class="section-title">Comentários</h2><div id="social"></div>`);
   social(view, j.id);
 }
