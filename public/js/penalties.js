@@ -2,7 +2,7 @@ import { api, esc, openSheet, toast } from "./util.js";
 
 /**
  * Disputa de pênaltis animada (só visual; o resultado já vem pronto do servidor).
- * Duas opções de defesa para comparar: "luva" (uma luva vai até o canto) e "x" (um X vermelho onde a bola parou).
+ * O goleiro é uma luva que vai até o canto escolhido (na defesa, espalma a bola).
  * A rede é uma malha de pontos com integração de Verlet: cada ponto tem profundidade (z), os vizinhos puxam uns
  * aos outros e as bordas ficam presas na trave; a bola empurra os pontos, perde velocidade e cai dentro do gol.
  */
@@ -10,7 +10,6 @@ const X = { esq: 22, meio: 50, dir: 78 }; // % da largura do palco
 const Y = { cima: 22, meio: 38, baixo: 53 }; // % da altura
 const FORA = { esq: [6, 30], meio: [50, 4], dir: [94, 30] };
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const STYLE_KEY = "pk-style";
 
 // gol no SVG/canvas: viewBox 100 x 64, ocupando top 4% e 60% da altura do palco
 const toNet = (sx, sy) => [sx, ((sy - 4) * 64) / 60];
@@ -103,13 +102,8 @@ function makeNet(canvas) {
 export function openShootout(t) {
   const p = t.pens;
   const names = { a: t.a_nick ?? "?", b: t.b_nick ?? "?" };
-  let style = "luva";
-  try { style = localStorage.getItem(STYLE_KEY) === "x" ? "x" : "luva"; } catch {}
   const s = openSheet(`
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 class="section-title" style="margin:0">Pênaltis</h2>
-      <div class="seg" role="group" aria-label="Defesa"><button data-style="luva" aria-pressed="${style === "luva"}">Luva</button><button data-style="x" aria-pressed="${style === "x"}">X</button></div>
-    </div>
+    <h2 class="section-title" style="margin:0">Pênaltis</h2>
     <div class="pk-score" style="margin-top:10px">
       <div class="pk-side" data-s="a"><b>${esc(names.a)}</b><span class="pk-dots"></span></div>
       <div class="pk-num num"><span data-n="a">0</span> x <span data-n="b">0</span></div>
@@ -119,7 +113,6 @@ export function openShootout(t) {
       <canvas class="pk-net"></canvas>
       ${GOAL_SVG}
       <div class="pk-glove">${GLOVE_SVG}</div>
-      <div class="pk-x" aria-hidden="true"></div>
       <div class="pk-spot"></div>
       <img class="pk-ball" src="/icons/soccerball.svg" alt="">
       <div class="pk-msg" aria-live="polite"></div>
@@ -130,17 +123,9 @@ export function openShootout(t) {
   const stage = el.querySelector(".pk-stage");
   const ball = el.querySelector(".pk-ball");
   const glove = el.querySelector(".pk-glove");
-  const xMark = el.querySelector(".pk-x");
   const msg = el.querySelector(".pk-msg");
   const net = makeNet(el.querySelector(".pk-net"));
   let score, skip, runId = 0;
-  const setStyle = (v) => {
-    style = v;
-    stage.dataset.style = v;
-    el.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.style === v)));
-    try { localStorage.setItem(STYLE_KEY, v); } catch {}
-  };
-  setStyle(style);
 
   // laço da física: roda só enquanto a rede mexe ou a bola está nela
   let netBall = null, looping = false;
@@ -175,10 +160,9 @@ export function openShootout(t) {
     el.querySelector(`[data-s="${k.by}"] .pk-dots`).insertAdjacentHTML("beforeend", `<i class="${k.result === "gol" ? "ok" : "no"}" title="${k.result}"></i>`);
   };
   const reset = () => {
-    for (const e of [ball, glove, xMark]) e.getAnimations().forEach((a) => a.cancel());
+    for (const e of [ball, glove]) e.getAnimations().forEach((a) => a.cancel());
     netBall = null;
     ball.style.cssText = "";
-    xMark.classList.remove("show");
   };
 
   const run = async () => {
@@ -206,8 +190,7 @@ export function openShootout(t) {
       // luva: vai para o canto escolhido pelo goleiro; na defesa, vai exatamente na bola
       const [gx, gy] = k.result === "defesa" ? [tx, ty] : [X[k.dive.col], Y[k.dive.row]];
       const tilt = { esq: -35, meio: 0, dir: 35 }[k.dive.col];
-      if (style === "luva")
-        glove.animate(
+      glove.animate(
           [{ left: "50%", top: "40%", opacity: 0, transform: "translate(-50%,-50%) scale(.6) rotate(0)" }, { left: `${gx}%`, top: `${gy}%`, opacity: 1, transform: `translate(-50%,-50%) scale(1) rotate(${tilt}deg)` }],
           { duration: 380, delay: 140, easing: "cubic-bezier(.2,.8,.3,1)", fill: "forwards" },
         );
@@ -229,18 +212,11 @@ export function openShootout(t) {
         kickLoop();
         setTimeout(() => (netBall = null), 900);
       } else if (k.result === "defesa") {
-        if (style === "luva") {
           glove.animate([{ transform: `translate(-50%,-50%) scale(1) rotate(${tilt}deg)` }, { transform: `translate(-50%,-50%) scale(1.12) rotate(${tilt}deg)` }, { transform: `translate(-50%,-50%) scale(1) rotate(${tilt}deg)` }], { duration: 220 });
           ball.animate(
             [{ left: `${tx}%`, top: `${ty}%`, transform: "translate(-50%,-50%) scale(.55)" }, { left: `${50 + (tx - 50) * 1.6}%`, top: "80%", transform: "translate(-50%,-50%) scale(.85) rotate(-300deg)" }],
             { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)", fill: "forwards" },
           );
-        } else {
-          xMark.style.left = `${tx}%`;
-          xMark.style.top = `${ty}%`;
-          xMark.classList.add("show");
-          ball.animate([{ opacity: 1 }, { opacity: 0.35 }], { duration: 250, fill: "forwards" });
-        }
       }
       msg.textContent = { gol: "Gol!", defesa: "Defendeu!", fora: "Pra fora!" }[k.result];
       msg.className = `pk-msg show ${k.result}`;
@@ -254,10 +230,9 @@ export function openShootout(t) {
   };
 
   el.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-style],[data-skip],[data-again]");
+    const b = e.target.closest("[data-skip],[data-again]");
     if (!b) return;
-    if (b.dataset.style) setStyle(b.dataset.style);
-    else if (b.hasAttribute("data-skip")) skip = true;
+    if (b.hasAttribute("data-skip")) skip = true;
     else (reset(), run());
   });
   run();
@@ -270,13 +245,16 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const COLS = ["esq", "meio", "dir"];
 const ROWS = ["cima", "meio", "baixo"];
 const PICKS = 10;
+const SIDE = { esq: "Esquerda", meio: "Meio", dir: "Direita" };
+const HEIGHT = { cima: "em cima", meio: "meia altura", baixo: "embaixo" };
+const spotText = (v) => `${SIDE[v.col]} · ${HEIGHT[v.row]}`;
 const ordinal = (i) => (i < 5 ? `${i + 1}ª cobrança` : `${i + 1}ª · alternada`);
 
 /** Escolha de chute e pulo, cobrança a cobrança. O que ficar vazio, a máquina sorteia no fim do prazo. */
 export function openPicker(t, campId, onSaved) {
   const mine = t.meu ?? { aims: [], dives: [] };
   const pick = { aims: Array.from({ length: PICKS }, (_, i) => mine.aims?.[i] ?? null), dives: Array.from({ length: PICKS }, (_, i) => mine.dives?.[i] ?? null) };
-  const grid = (kind, i) => `<div class="pk-pick" role="group" aria-label="${kind === "aims" ? "Chute" : "Pulo"} da ${ordinal(i)}">${ROWS.map((r) => COLS.map((c) => `<button type="button" data-k="${kind}" data-i="${i}" data-c="${c}" data-r="${r}" aria-label="${r} ${c}"></button>`).join("")).join("")}</div>`;
+  const grid = (kind, i) => `<div class="pk-pickcell"><div class="pk-pick" data-kind="${kind}" role="group" aria-label="${kind === "aims" ? "Chute" : "Pulo"} da ${ordinal(i)}">${ROWS.map((r) => COLS.map((c) => `<button type="button" data-k="${kind}" data-i="${i}" data-c="${c}" data-r="${r}" aria-label="${spotText({ col: c, row: r })}"></button>`).join("")).join("")}</div><small data-cap="${kind}-${i}"></small></div>`;
   const s = openSheet(`
     <h2 class="section-title" style="margin-top:0">Seus pênaltis</h2>
     <p class="muted" style="font-size:13px;margin-top:0">${t.deadline ? `Até ${esc(new Date(t.deadline).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }))}.` : "O prazo será definido pelo admin."} Toque onde você chuta e para onde pula em cada cobrança. O que ficar em branco, a máquina sorteia.</p>
@@ -287,6 +265,12 @@ export function openPicker(t, campId, onSaved) {
     s.el.querySelectorAll(".pk-pick button").forEach((b) => {
       const v = pick[b.dataset.k][b.dataset.i];
       b.setAttribute("aria-pressed", String(!!v && v.col === b.dataset.c && v.row === b.dataset.r));
+    }) ||
+    s.el.querySelectorAll("[data-cap]").forEach((c) => {
+      const [k, i] = c.dataset.cap.split("-");
+      const v = pick[k][i];
+      c.textContent = v ? spotText(v) : "máquina escolhe";
+      c.classList.toggle("muted", !v);
     });
   paint();
   s.el.addEventListener("click", async (e) => {

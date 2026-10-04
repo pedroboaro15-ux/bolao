@@ -68,7 +68,7 @@ Sem pagamento no site: dinheiro, quando houver, é combinado entre eles.
 - Jogo adiado/cancelado = "excluído da rodada" (ninguém pontua).
 - Dia do bolão = 06:00 → 06:00 de São Paulo. A tela de início mostra **só a rodada de hoje**; sem rodada, abre votos em jogos e sugestões.
 - Campeonato de confrontos: cada dia com rodada no período = uma rodada; **1 de lucro = 1 gol** (fixo); gols iguais = empate no confronto; as casas decimais do lucro só desempatam a classificação; V=3, E=1.
-- Mata-mata empatado: mais lucro na ida+volta; lucro igual = pênaltis com palpite dos dois até o prazo do admin, máquina completa o que faltar (`src/lib/penalties.ts`, rotas em `src/routes/extra.ts`, tabela `shootouts`, tela `public/js/penalties.js`). Pendente de decisão: Luva ou X na animação.
+- Mata-mata empatado: mais lucro na ida+volta; lucro igual = pênaltis com palpite dos dois até o prazo do admin, máquina completa o que faltar (`src/lib/penalties.ts`, rotas em `src/routes/extra.ts`, tabela `shootouts`, tela `public/js/penalties.js`). Goleiro da animação = luva (`public/icons/luva.svg`).
 - Sem ficha do time (últimos/próximos jogos): o plano grátis da API não libera. Não mostrar ao jogador explicações técnicas de erro.
 
 ## 6. Como publicar (fluxo atual)
